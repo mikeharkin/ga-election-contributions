@@ -1,0 +1,2869 @@
+Georgia's Financial Contributions to 2016 Presidential Campaigns
+by Michael Harkin
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Packages}
+# Import R packages for project
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(gridExtra)
+library(ggthemes)
+```
+
+The dataset I'm going to explore in this project comes from the FEC (Federal
+Elections Commission). It contains data about individual financial contributions
+from Georgia citizens to the 2016 United States presidential campaigns. I live
+in Atlanta, generally considered a blue region in a predominantly red state.
+Georgia went to Donald Trump in the 2016 election. I am curious what Georgia's
+campaign contributions looked like in the most recent election. I am also
+wondering what Atlanta's contributions looked like compared to the rest of the
+state.
+
+First I'll load in the data and take a look at the accompanying documentation
+for 2016 datasets from the [FEC website](ftp://ftp.fec.gov/FEC/Presidential_Map/2016/DATA_DICTIONARIES/CONTRIBUTOR_FORMAT.txt). 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Load the data and replace empty string values with NA
+# Comma manually added to the end of the first line in order to avoid an error
+ga <- read.csv('P00000001-GA.csv', na.strings=c(""))
+# Drop the boolean "X" column that comes about when reading in the CSV file
+ga$X <- NULL
+```
+
+# Univariate Plots Section
+Now that the data is loaded in, I'll take a look at the names of the 18
+variables in the dataset alongside the aforementioned documentation.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Names}
+# Look at names of columns in ga data.frame
+names(ga)
+```
+
+I'll also look at a couple of quick summaries of each column in the data, as 
+well as look at the data's structure.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Summary}
+# Show summaries of all 18 columns in the 'ga' data.frame
+summary(ga)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Structure}
+# Look at the structure of the 'ga' data.frame
+str(ga)
+```
+
+Looking over these summaries, here are a few things I immediately wonder about:
+
+* Why do some campaign contributions come in after Election Day?
+* It'd be interesting to look at information about the top contributors.
+* How do Atlanta contributions compare to those from the rest of the state?
+* There are 35,000 more contributions to primaries than to general elections.
+* Does the frequency of contributions change over time?
+
+For ease of analysis later on, I'm going to convert the `contb_receipt_dt`
+column to R's built-in Date format.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Convert_Rcpt_Dt_to_Date}
+# Convert the contribution receipt date column to R's Date format
+ga$contb_receipt_dt <- as.Date(ga$contb_receipt_dt, format='%d-%b-%y')
+```
+
+## Number of Contributions
+As a starting point I'll take a look at a table containing the names of each 
+candidate and the number of contributions they received, keeping in mind
+that each of these totals include refunds.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Candidate_Table}
+# Show table with names of each candidate in the 'ga' dataset
+table(ga$cand_nm)
+```
+
+Unsurprisingly Trump and Hillary Clinton had the two highest counts of
+contributions. I am surprised, however, that Bernie Sanders received only about
+3,500 less contributions in Georgia than Trump, the eventual winner. This
+conflicts with my prior assumptions about how red-leaning Georgia is.
+
+## Amount of Contributions Received
+In addition to the number of contributions associated with each candidate, it'd
+be helpful to know the total amount of money received by each candidate.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contribution_Sums}
+# Look at contribution dollar totals for each candidate by name
+by(ga$contb_receipt_amt, ga$cand_nm, sum)
+```
+
+The highest totals belong to Clinton (7,045,095), Trump (4,935,612), Ted Cruz
+(1,193,164), Sanders (1,075,672), and Ben Carson (842664.2). These totals
+include both primary and general election contributions.
+
+## Adding New Columns
+I'd like to add the candidates' gender and party to the contribution records.
+This additional information would potentially make for some interesting
+analyses. In order to do this, I'll write out character vectors of candidates
+within each political party based on information I collected from the [FEC](http://www.fec.gov/press/resources/2016presidential_form2nm.shtml).
+
+I'll use nested ifelse statements to assign each contribution to the
+appropriate political party. I'll also do the same kind of categorization using
+character vectors to match the candidate's gender to each contribution.
+
+Following the format of variables as they came titled, I'll name these new
+columns `cand_party` (candidate party) and `cand_gender` (candidate gender).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Add_Gender_and_Party}
+# Create character vectors of parties each candidate is in
+democratic <- c("Clinton, Hillary Rodham", "Lessig, Lawrence",
+                "O'Malley, Martin Joseph", "Sanders, Bernard", 
+                "Webb, James Henry Jr.")
+green <- c("Stein, Jill")
+independent <- c("McMullin, Evan")
+libertarian <- c("Johnson, Gary")
+republican <- c("Bush, Jeb", "Carson, Benjamin S.", "Christie, Christopher J.",
+                "Cruz, Rafael Edward 'Ted'", "Fiorina, Carly", 
+                "Graham, Lindsey O.", "Huckabee, Mike", "Jindal, Bobby",
+                "Kasich, John R.", "Paul, Rand", "Perry, James R. (Rick)",
+                "Rubio, Marco", "Santorum, Richard J.", "Trump, Donald J.",
+                "Walker, Scott")
+
+# Create character vectors of male and female candidates
+male_candidates <- c("Bush, Jeb", "Carson, Benjamin S.",
+                     "Christie, Christopher J.", "Cruz, Rafael Edward 'Ted'",
+                     "Graham, Lindsey O.", "Huckabee, Mike", "Jindal, Bobby",
+                     "Johnson, Gary", "Kasich, John R.", "Lessig, Lawrence",
+                     "McMullin, Evan", "O'Malley, Martin Joseph", "Paul, Rand",
+                     "Perry, James R. (Rick)", "Rubio, Marco",
+                     "Sanders, Bernard", "Santorum, Richard J.",
+                     "Trump, Donald J.", "Walker, Scott",
+                     "Webb, James Henry Jr.")
+female_candidates <- c("Clinton, Hillary Rodham", "Fiorina, Carly",
+                       "Stein, Jill")
+
+# Nested ifelse statements to assign correct candidate party name to each row
+ga$cand_party <- ifelse(ga$cand_nm %in% republican, "Republican", 
+                    ifelse(ga$cand_nm %in% democratic, "Democrat",
+                      ifelse(ga$cand_nm %in% green, "Green",
+                        ifelse(ga$cand_nm %in% libertarian, "Libertarian",
+                            ifelse(ga$cand_nm %in% independent, "Independent", 
+                              NA)))))
+# Nested ifelse statements to assign correct candidate gender to each row
+ga$cand_gender <- ifelse(ga$cand_nm %in% male_candidates, "male",
+                    ifelse(ga$cand_nm %in% female_candidates, "female", NA))
+```
+
+I'll take a quick look at summaries and plots of these new variables.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Gender_Table}
+# Create table showing counts of contributions to candidates by gender
+table(ga$cand_gender)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Gender_Bar_Chart}
+# Create bar chart showing counts of contributions to candidates by gender
+qplot(x = cand_gender, data = ga)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Party_Table}
+# Create table showing counts of contributions to each political party
+table(ga$cand_party)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Candidate_Parties_ScaleYLog10}
+# Create bar chart showing number of contributions to each party
+qplot(x = cand_party, data = ga) +
+  # Apply a log10 transformation to the y-axis and remove scientific notation
+  scale_y_log10(labels = scales::comma)
+```
+
+The Democratic candidates received over 35,000 more contributions than the
+Republican candidates, despite there being 15 Republican candidates during the
+primary elections. Additionally, there are only 15,000 more contributions
+associated with male candidates than female candidates, even though there were
+20 male candidates and 3 female candidates. 
+
+The third-party candidates are barely perceptible in this bar graph, so I'll
+apply a log10 scale to the y-axis in order to get a better sense of the 
+distribution.
+
+Looking at this data on a log10 y-scale makes it more apparent that the amount
+of contributions to third-party candidates is not insignificant. Gary Johnson,
+the Libertarian candidate, received 451 contributions and Jill Stein, the Green
+candidate, received 157 contributions. The bar chart without the log10
+transformation makes it look like the Independent candidate, Evan McMullin, has
+0 contributions, whereas he actually has 41.
+
+## Contributions by Candidate
+I'd like to get a better picture of how contributions to the individual
+candidates break down. First I'll take a look at a bar chart of the Democratic
+candidates. I'll apply a log10 transformation to the y-axis in order to be able
+to properly view contributions to all the candidates. I'll also swap the x-axis
+and y-axis for ease of reading.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Democratic_Contributions_ScaleYLog10}
+# Create bar chart showing number of contributions to Democratic candidates
+qplot(x = cand_nm, data = subset(ga, cand_party == 'Democrat')) +
+  # Apply log10 transformation to y-axis and remove scientific notation
+  scale_y_log10(labels = scales::comma) +
+  # Swap x- and y-axes for ease of reading
+  coord_flip()
+```
+
+Clinton, the Democratic nominee, received considerably more donations in Georgia
+than any other Democratic candidate, getting around 40,000 more contributions
+than Sanders, the runner-up.
+
+The other Democratic candidates received very few contributions. Here are the
+contribution counts for the other three Democrats:
+
+* Jim Webb: 14
+* Lawrence Lessig: 16
+* Martin O'Malley: 17
+
+Now I'll turn to the Republicans. I'll do the same log10 transformation to the
+y-axis in order to be able to see all the contributions properly, and will
+swap the x- and y-axis for ease of reading.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Republican_Contributions_ScaleYLog10}
+# Create bar chart showing all the Republican candidates
+qplot(x = cand_nm, data = subset(ga, cand_party == 'Republican')) +
+  # Apply a log10 transformation to the y-axis and remove scientific notation
+  scale_y_log10(labels = scales::comma) +
+  # Swap the x- and y-axis for ease of reading
+  coord_flip()
+```
+
+There's significant variance in the amount of contributions received by the
+Republican candidates. The four highest bars represent the number of
+contributions received by Trump, Ted Cruz, Ben Carson, and Marco Rubio. 
+
+As for the lower-ranking candidates, here are their contribution counts:
+
+* Mike Huckabee: 291
+* Scott Walker: 202
+* Lindsey Graham: 75
+* Chris Christie: 45
+* Rick Perry: 27
+* Rick Santorum: 17
+* Bobby Jindal: 12
+
+I'd also like to look at the candidates outside of the two major political
+parties.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Independent_Contributions}
+# Create bar chart showing counts of contributions to third-party candidates
+qplot(x = cand_nm, data = subset(ga, cand_party != 'Democrat'
+                                 & cand_party != 'Republican'))
+```
+
+These three candidates received much fewer contributions than the top Democratic
+and Republican candidates did. Gary Johnson, the Libertarian candidate and the
+recipient of the highest number of contributions among the third-party
+candidates, has just over 450 contributions associated with his campaign.
+
+## Contribution Amounts
+I also need to take a look at contribution receipt amounts. First I will run a
+quick summary of the `contb_receipt_amt` variable, which represents the receipt
+amount for each contribution, in order to get a sense of the range of values of
+contributions received.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Summary}
+# Show summary of contribution receipt amounts for entire dataset
+summary(ga$contb_receipt_amt)
+```
+
+There are at least a few negative values in the dataset, and there appear to be
+both positive and negative outliers. The negative values represent refunds to
+contributors. According to the summary of the dataset's `receipt_desc` variable,
+there are 1,047 rows of the dataset that are marked as "Refund." I'll keep this
+in mind as I continue exploring the data.
+
+According to [FEC rules](http://www.fec.gov/pages/brochures/citizens.shtml), an
+individual maximum of 2,700 dollars can be contributed to a primary or general
+presidential election. It's legal to contribute as much as 5,400 dollars to a
+campaign if half the amount is designated for the primary election and the
+other half is designated to the general election. For this reason I'm curious
+about the significant outliers in this data, particularly the low of -5,900
+dollars and the high of 12,500 dollars.
+
+While looking at the overall distribution of contributions, it'd be helpful to
+look at a histogram of the range of receipt amounts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Histogram}
+# Create histogram showing counts of campaign contribution amounts
+qplot(x = contb_receipt_amt, data = ga)
+```
+
+Most contributions to the various presidential campaigns appear to be less than
+500 dollars per this initial `qplot` graph. There are some real outliers in the
+data as well, particularly a handful of very low negative values and some very
+high outliers as well.
+
+I'm going to take a closer look at the tallest chunk of the distribution,
+adjusting the binwidth and the axes to get a sense of the distribution of
+contributions under 500 dollars.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Hist_Zoom}
+# Create histogram showing counts of contribution amounts between 0 and 500
+qplot(x = contb_receipt_amt, data = ga, binwidth = 25, xlim = c(0, 500))
+```
+
+The data remains positively skewed even zoomed in this far. I can now see that
+most contributions are 100 dollars or less. I'm going to apply a transformation
+to the data using `scale_x_sqrt` to see if that'll give a helpful view of the
+distribution's shape. I'll also reduce the binsize to 1.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Hist_Sqrt_Transform}
+# Plot a histogram showing counts of the contribution receipt amounts
+# Add 1 to contribution receipt amount in order to include 0 values
+qplot(x = (contb_receipt_amt + 1), data = ga) +
+  scale_x_sqrt()
+```
+
+The square root transformation results in a simlarly positively skewed
+distribution. I'll try a log10 transformation of the data to see if that's
+helpful.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Hist_Log_Transform}
+# Apply a log10 scale to the contribution amounts
+# Add 1 to contribution receipt amount in order to include zeroes
+qplot(x = (contb_receipt_amt + 1), data = ga) +
+  scale_x_log10()
+```
+
+A log10 transformation gives an approximately normal distribution of the data
+for contribution amount. However, because it's a log transformation, it doesn't
+incorporate the negative values. Same goes for the square root transformation.
+That said, the refunds make up only a small portion of the overall data (less
+than 1 percent).
+
+I'd like to zoom in on the lower end of the distribution (minus the log10
+transformation) to get a better idea of how much there were of certain
+contribution amounts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Hist_250}
+# Create histogram of contributions between 0 and 250 with binwidth of 5
+qplot(x = contb_receipt_amt, data = ga, binwidth = 5, xlim = c(0, 250))
+```
+
+Many of these contributions are below 50 dollars, so I'd like to zoom in a bit
+more on the part of the histogram between 0 and 50 dollars.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipts_Hist_50}
+# Create histogram of contributions below 50 dollars with binwidth 1
+qplot(x = contb_receipt_amt, data = ga, binwidth = 1, xlim = c(0, 50))
+```
+
+Most of the contributions are multiples of 5, with the highest number of
+contributions coming in at 25 dollars. There are a high number of 5-, 10-, 50-,
+and 100-dollar contributions as well.
+
+## Contribution Dates
+Another potentially interesting component of the data are the dates on which
+contributions were received. Earlier I converted the `contb_receipt_dt` column
+to the R date format, which should help with displaying and analyzing the data
+correctly.
+
+First I'll do a histogram of receipt dates for every contribution in Georgia.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contrib_Receipt_Date_Hist}
+# Create histogram of contribution counts for each date in the dataset
+qplot(x = contb_receipt_dt, data = ga)
+```
+
+There's a surprisingly significant amount of contributions in the year 2015, and
+even a few in 2014. The contributions ramp up quite a bit in 2016. It makes
+sense that the majority of contributions would come in during 2016 given that
+presidential campaigns don't seem to ramp up until the year of the election
+itself.
+
+I'm curious what this distribution looks like with the binwidth set to 1 and the
+x-axis confined to 2015 through 2016.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contrib_Receipt_Dt_Adjusted}
+# Create histogram of contribution counts for each date in the dataset
+# Set binwidth to 1
+qplot(x = contb_receipt_dt, data = ga, binwidth = 1) +
+  scale_x_date(lim = c(as.Date('2015-01-01'), as.Date('2016-12-31')))
+```
+
+This results in a much more granular histogram with distinct peaks around March
+2016, July 2016, and just before Election Day in November 2016. In the
+multivariate analysis I want to be sure to examine whether the number of
+contributions and their amounts have any relationship with the primary and
+general elections.
+
+## Form Type
+There are three form types associated with each contribution in the dataset. 
+These categorizations refer to lines in Form 3P, an FEC document that requires
+candidates to report receipts and disbursements. Here are the descriptions
+of each line:
+
+**Form 3P Line 17A**: Contributions (other than loans) from Individuals/Persons
+Other than Political Committee
+
+**Form 3P Line 18**: Transfers from Other Authorized Committees
+
+**Form 3P Line 28A**: Refunds of Contributions to Individuals/Persons Other Than
+Political Committees
+
+Here's a quick look at the amount of each form type that appears in the dataset
+for Georgia.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Form_Type_Table}
+# Display table showing counts of contribution form types
+table(ga$form_tp)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Form_Type_Bar_Chart}
+# Create bar chart showing counts of contribution form types
+qplot(x = form_tp, data = ga)
+```
+
+The vast majority of contributions (116,284) are categorized as "SA17A", meaning
+they are contributions from individuals. There are a further 36,654 that are
+contributions from committees. It'd be interesting in the bivariate section to
+see if these form types have any type of correspondence with donation amounts or
+contributor location.
+
+## Contributor Names
+I'm curious about the names listed as having hundreds of contributions
+associated with their name. The table listing out every contributor's name is
+far too long to print out but below are a few contributors who have many
+transactions associated with their name.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contributor_Summary}
+# Show the contributors with the highest number of contributions associated
+# with their name.
+head(summary(ga$contbr_nm))
+```
+
+I'll look at the sum of the top three of these folks' contributions.
+
+Julie Ralston:
+
+```{r echo=FALSE, message=FALSE, warning = FALSE, Indiv_Contbr_Summary_1}
+# Create subset of data for contributions by Julie Ralston
+julie_ralston <- subset(ga, contbr_nm == "RALSTON, JULIE")
+# Display sum of Julie Ralston's campaign contributions
+sum(julie_ralston$contb_receipt_amt)
+```
+
+Joe Tate:
+
+```{r echo=FALSE, message=FALSE, warning = FALSE, Indiv_Contbr_Summary_2}
+# Create subset of data for contributions by Joe Tate
+joe_tate <- subset(ga, contbr_nm == "TATE, JOE")
+# Display sum of Joe Tate's campaign contributions
+sum(joe_tate$contb_receipt_amt)
+```
+
+Janice Gladin:
+
+```{r echo=FALSE, message=FALSE, warning = FALSE, Indiv_Contbr_Summary_3}
+# Create subset of data for contributions by Janice Gladin
+janice_gladin <- subset(ga, contbr_nm == "GLADIN, JANICE")
+# Display sum of Janice Gladin's campaign contributions
+sum(janice_gladin$contb_receipt_amt)
+```
+
+None of these three contributors pass the 2,700-dollar mark. I'm wondering if
+there was perhaps a program that allowed people to contribute a certain amount
+of money per week or per month on a recurring basis. That might help explain
+the recurring payments in cases like this.
+
+In the bivariate plots section, I want to look at individual contributor totals
+if possible.
+
+## Memo Text
+One of the dataset's columns is named `memo_cd`, and it indicates whether or not
+there is "memo text"" associated with the contribution. If an 'X' appears in
+this column then there is an explanatory memo of some kind associated with that
+contribution.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Memo_Code_Table}
+# Display a table of the values found in the 
+table(ga$memo_cd)
+```
+
+Almost 38,000 of the contributions have "memo text" associated with them, and
+there are over 100 distinct memos. Here's a sample of the memos that appear.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Memo_Text_Table}
+# Show the first few rows of a table containing every possible memo in the data
+head(table(ga$memo_text))
+```
+
+Here are a few of the notable categories from the extended list:
+
+* 25,549 labeled as "Earmarked Contribution"
+* 12,383 labeled as "Hillary Victory Fund"
+* 227 labeld as "Earmarked from Make DC Listen"
+* 167 labeled as "Best Efforts Update"
+* Several labeled as a refund or redesignation of some kind
+
+## Election Type
+The `election_tp` column specifies which election each contribution is 
+connected to. The vast majority of contributions will likely be associated with
+the 2016 election but I'd like to see what the data says.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Election_Type_Table}
+# Show a table of the counts of the different election types in the dataset
+table(ga$election_tp)
+```
+
+Nearly 95,000 the contributions are associated with primaries (P2016) and a
+further 59,000 are associated with the general election (G2016). There are 23
+labeled as "other" (O2016) - it'd be interesting to take a look at those - and
+one contribution labeled as for the 2020 primaries (P2020).
+
+I'll look at counts of election type and use a log10 scale on the y-axis in
+order to properly see the counts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Election_Type_Bar_Chart_YLog10}
+# Create bar chart showing different election types in the dataset
+qplot(x = election_tp, data = ga) +
+  # Apply a log10 transform to the y-scale and remove scientific notation
+  scale_y_log10(label = scales::comma)
+```
+
+There are a significant amount of 'NA' values for election type. I'll look at
+these contributions shortly.
+
+First I'll look at the contributions marked as "O2016" (2016 "Other") and the
+contribution marked as "P2020" (for the 2020 primaries).
+
+2016 "Other":
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Other_2016}
+# Create subset of data where election type is labeled as "Other"
+other_2016 <- subset(ga, election_tp == "O2016")
+head(other_2016)
+```
+
+2020 Primaries:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Primary_2020}
+# Create subset of data where election type is labeled as "2020 Primary"
+primary_2020 <- subset(ga, election_tp == "P2020")
+head(primary_2020)
+```
+
+The contributions labeled "other" are all donations to Jill Stein, the Green
+nominee, made between November 23-28, 2016.
+
+The donation labeled as for the 2020 primaries was made to Lindsey Graham on
+January 27, 2016 and is labeled as "Redesignation from General."
+
+Now I'd like to take a look at the rows where the election type is "NA."
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NA_2016}
+# Create subset of data where election type is labeled as "NA"
+na_2016 <- subset(ga, is.na(election_tp))
+```
+
+Number of rows with election type "NA":
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NA_2016_Dimensions}
+# Count the number of rows with election type "NA"
+dim(na_2016)
+```
+
+It turns out that 459 of the transactions have their election type labeled as
+"NA." I'm going to take a closer look at these contributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NA_2016_Summary}
+summary(na_2016)
+```
+
+The vast majority of the transactions with election type "NA" - 408 of them -
+are to Trump's campaign. 408 of them have the form type "SA18" meaning they are
+contributions from authorized committees. Additionally, about one-third of the
+contributions are from people who are retired, and most of them are from parts
+of Georgia outside Atlanta.
+
+I'll filter the data.frame using `dplyr` to look more closely at contributions
+with election type "NA" and form type "SA18".
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NA_and_SA18_Dataframe_Summary}
+# Filter ga.frame to election type "NA" and form type "SA18"
+na_sa18 <- filter(ga, is.na(election_tp), form_tp == "SA18")
+# Display summary of this new data.frame
+summary(na_sa18)
+```
+
+All of the "NA" contributions labeled as transfers from authorized committees
+are contributions to Donald Trump that came in between August 16 and November
+17, 2016. Almost half of these contributors are either retired, self-employed,
+or homemakers, and most of them live outside of Atlanta.
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 153,985 observations of 18 variables. Each row in the dataset
+represents a contribution, refund, or redesignation from Georgia individuals to
+the 2016 presidential campaigns. This data is drawn from reports from each
+campaign as required by the Federal Election Commission (FEC).
+
+The individual transactions have several columns' worth of information. This
+information includes the amount and date of each transaction as well as the
+candidate it was made in support of, whether the transaction was for the primary
+or general election, and demographic information about the contributor. In cases
+where an individual had multiple transactions associated with their name, each
+individual transaction is recorded, as opposed to being consolidated into one
+row per contributor.
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features of interest to me are the contribution amounts, the dates and
+designations of each contribution, and the demographic information about the
+contributors. The way this data is reported allows for several potential avenues
+of exploration. It gets a bit fuzzy with regard to the wide range of memos and
+designations that are used.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+I think that the zip code, form type, and individual transaction IDs will help
+with reshaping and mutating the data in order to better understand patterns and
+trends in the contribution data. These parts of the data should be helpful with
+analyzing contributions by location.
+
+### Did you create any new variables from existing variables in the dataset?
+I added two new variables: candidate party (`cand_party`) and gender
+(`cand_gender`). I used character vectors of the candidates' names to do this.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+There are some significant outliers in the distribution of contribution amounts.
+These outliers positively skew the contribution distributions. For instance,
+there's a Republican contribution that's 12,500 dollars, as well as one refund
+to a Republican contributor in the amount of -5,900 dollars.
+
+I transformed the contribution amount data using a log10 scale. I did this
+because I wanted to determine whether the distribution was approximately
+normal, and it appeared to be positively skewed prior to transformation. The
+log10 transformation resulted in normal-ish distributions for all of the
+candidates I looked at who received at least a couple hundred contributions.
+
+There were a few bar charts with which I applied a log10 transformation to the
+y-axis. This allowed me to get a better sense of the distribution in cases where
+the counts for individual variables were hard to perceive or seemed to be zero.
+
+I also changed the contribution date column to R's Date format in order to be
+able to work with that field in a more convenient way that accurately reflects
+that component of the data set. 
+
+# Bivariate Plots Section
+
+## Contribution Amounts by Party
+I'd be interested in seeing what the individual parties' contributions look
+like, particularly the Republicans and Democrats given that there is a decent
+sample size of contributions for each party.
+
+I'll start by using the `by` function to get a summary of contribution amounts
+divided up by party.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Amts_by_Party}
+# Summarize receipt amounts by candidates' political parties
+by(ga$contb_receipt_amt, ga$cand_party, summary)
+```
+
+The Democrats and Republicans have the lowest median contribution amounts at 25
+dollars and 50 dollars respectively. Republicans, however, have a much higher
+mean contribution of 158 dollars compared to a mean contribution of 86 dollars
+to the Democratic candidates. It seems notable that the Republican candidates'
+mean is that much higher given the high number of Republican candidates who ran
+and are represented in the dataset.
+
+Additionally, the median and mean contribution amounts for candidates outside of
+the two major political parties were considerably higher than the mean and
+median contributions to Democratic candidates. This is interesting for a couple
+of reasons. Perhaps some contributors to third-party candidates and nominees
+pledge more money because they're aware that there are fewer third-party
+campaign contributors than there are contributors to Democratic and Republican
+candidates and nominees.
+
+A frequency polygon might be a useful way of looking at the distribution of
+contribution amounts across the different U.S. political parties. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Party_FreqPoly}
+# Create frequency polygon showing contribution amounts by party
+qplot(x = contb_receipt_amt, data = ga, binwidth = 1, geom = 'freqpoly',
+      colour = cand_party)
+```
+
+Every perceptible peak in this frequency polygon represents either Democratic or
+Republican candidates. Let's zoom in to the area between 0 and 250 dollars, and
+then further in at the area between 0 and 100 dollars, just to get a sense of
+the distribution of the lower contribution amounts that comprise the bulk of
+contributions received in this election. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_Party_FreqPoly_250}
+# Create frequency polygon showing contribution amounts under 250 by party
+qplot(x = contb_receipt_amt, data = ga, binwidth = 1, geom = 'freqpoly',
+      colour = cand_party) +
+  scale_x_continuous(limits = c(0, 250))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, FreqPoly_Parties_100}
+# Create frequency polygon showing contribution amounts under 100 by party
+qplot(x = contb_receipt_amt, data = ga, binwidth = 1, geom = 'freqpoly',
+      colour = cand_party) +
+  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 5))
+```
+
+It looks like the Democratic candidates had generally much higher levels of
+giving at amounts of 100 dollars or less. There's a spike at the 40-dollar and
+80-dollar levels for Republican candidates, as well as spikes at the 200- and
+250-dollar levels. However, nearly every other spike for Republican candidates
+is dwarfed by a larger Democratic candidates spike above it. The Independent,
+Green, and Libertarian candidates barely register on this graph, appearing to
+be a single flat line just above a count of 0.
+
+## Contribution Amounts by Candidate
+Now I'll take a look at histograms of contributions for the various candidates.
+First I'll look at the top two Democratic candidates.
+
+Hillary Clinton:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Clinton_Contributions_Summary}
+# Create subset of data for contributions to Clinton
+clinton <- subset(ga, cand_nm == 'Clinton, Hillary Rodham')
+# Display summary of this new subset
+summary(clinton$contb_receipt_amt)
+```
+
+Bernie Sanders:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Sanders_Contribution_Summary}
+# Create subset of data for contributions to Sanders
+sanders <- subset(ga, cand_nm == 'Sanders, Bernard')
+# Display summary of this new subset
+summary(sanders$contb_receipt_amt)
+```
+
+There is very little difference in median contribution amount between Clinton's
+and Sanders' campaigns. The median contribution to Sanders' campaign is 27
+dollars versus the median of 25 dollars for Clinton. However, the mean
+contribution amount for Clinton is notably higher than that of Sanders: 103
+dollars versus 41 dollars. The variance is much higher for Clinton's
+contributions as well.
+
+Next I'll write a function for making a histogram of a candidate's contributions
+and use that for making histograms for individual candidates. The first two
+candidates I'll use this function (`make_contb_hist`) for Clinton and Sanders,
+the two leading Democratic candidates in the election.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Democratic_Cont_Histograms}
+# Create function for plotting histograms with election data given x limits
+# and binsize
+make_contb_hist <- function(dataset, binsize, lower_limit, upper_limit) {
+  hist <- qplot(x = contb_receipt_amt, data = dataset, binwidth = binsize) +
+    scale_x_continuous(limits = c(lower_limit, upper_limit))
+  return(hist)
+}
+
+# Use new function and grid.arrange (from gridExtra) to create histograms
+clinton_hist <- make_contb_hist(clinton, 25, 0, 1000) +
+  ggtitle("Clinton")
+
+sanders_hist <- make_contb_hist(sanders, 25, 0, 1000) +
+  ggtitle("Sanders")
+
+grid.arrange(clinton_hist, sanders_hist, ncol = 2)
+```
+
+Both of these histograms are positively skewed and reflect what we're seeing
+in the summaries. Considering that most contributions are 250 dollars or less
+each, I'd like to zoom in a bit to get a better sense of the shape of these
+distributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Dem_Cont_Hist_Zoom}
+# Create two new zoomed-in histograms and display with grid.arrange
+clinton_hist_zoom <- make_contb_hist(clinton, 5, 0, 250) +
+  ggtitle("Clinton")
+
+sanders_hist_zoom <- make_contb_hist(clinton, 5, 0, 250) +
+  ggtitle("Sanders")
+
+grid.arrange(clinton_hist_zoom, sanders_hist_zoom, ncol = 2)
+```
+
+As is the case for the overall data for receipt amounts, most of the
+contributions to both Democratic candidates were 50 dollars or less. This seems
+to make sense given that most contributors probably don't put aside very much
+of their disposable income for presidential campaign contributions.
+
+It's notable that the maximum refund and maximum contribution amounts to
+Clinton's campaign are -2,700 and 2,700 dollars respectively. The maximum
+contribution to Sanders' campaign is also 2,700 dollars, with the maximum refund
+at the -2,500 mark. There aren't any outliers in this dataset that immediately
+suggest contributions above the legal amount.
+
+I'd like to see what the distribution of contributions for both Democratic
+candidates looks like with a log10 transformation in light of this
+transformation having been helpful with transforming the overall contribution
+amount data.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Clinton_Sanders_Log_Transform}
+# Create two histograms of Clinton & Sanders contributions with x-axis
+# transformation using scale_x_log10. (Not using make_contb_hist because
+# the function doesn't include an x-scale transformation variable.)
+qplot(x = contb_receipt_amt, 
+      data = subset(ga, cand_nm == 'Clinton, Hillary Rodham' 
+                    | cand_nm == 'Sanders, Bernard')) +
+  scale_x_log10() +
+  facet_wrap(~cand_nm, ncol = 2)
+```
+
+The log10 transformation of these distributions appear to be approximately
+normal, with a slight positive skew to the contributions received by Clinton
+and a slight negative skew to contributions received by Sanders.
+
+I'd like to see how the top Republican candidates compare in this regard.
+
+Donald Trump:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Trump_Summary}
+# Create subset of dataset containing contributions to Donald Trump
+trump <- subset(ga, cand_nm == "Trump, Donald J.")
+# Display summary of contribution amounts to Trump.
+summary(trump$contb_receipt_amt)
+```
+
+Ted Cruz:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Cruz_Summary}
+# Create subset of dataset containing contributions to Ted Cruz
+cruz <- subset(ga, cand_nm == "Cruz, Rafael Edward 'Ted'")
+# Display summary of contribution amounts to Cruz.
+summary(cruz$contb_receipt_amt)
+```
+
+Ben Carson:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Carson_Summary}
+# Create subset of dataset containing contributions to Ben Carson
+carson <- subset(ga, cand_nm == "Carson, Benjamin S.")
+# Display summary of contribution amounts to Carson.
+summary(carson$contb_receipt_amt)
+```
+
+Jeb Bush:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bush_Summary}
+# Create subset of dataset containing contributions to Jeb Bush
+bush <- subset(ga, cand_nm == "Bush, Jeb")
+# Display summary of contribution amounts to Bush.
+summary(bush$contb_receipt_amt)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Republican_Cont_Histograms}
+# Create histograms and display them in 2x2 grid using grid.arrange
+trump_hist <- make_contb_hist(trump, 25, 0, 1000) +
+  ggtitle("Trump")
+
+cruz_hist <- make_contb_hist(cruz, 25, 0, 1000) +
+  ggtitle("Cruz")
+
+carson_hist <- make_contb_hist(carson, 25, 0, 1000) +
+  ggtitle("Carson")
+
+bush_hist <- make_contb_hist(bush, 25, 0, 1000) +
+  ggtitle("Bush")
+
+grid.arrange(trump_hist, cruz_hist, carson_hist, bush_hist, ncol = 2)
+```
+
+As with the Democratic candidates, most contributions are less than 250 each.
+I'd like to zoom in a bit and get a better sense of what the distribution of
+Republican candidate contributions are in amounts of 250 dollars or less.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Republican_Cont_250}
+# Create zoomed-in histograms of contributions < 250 for Republicans
+trump_hist_zoom <- make_contb_hist(trump, 5, 0, 250) +
+  ggtitle("Trump")
+cruz_hist_zoom <- make_contb_hist(cruz, 5, 0, 250) +
+  ggtitle("Cruz")
+carson_hist_zoom <- make_contb_hist(carson, 5, 0, 250) +
+  ggtitle("Carson")
+bush_hist_zoom <- make_contb_hist(bush, 5, 0, 250) +
+  ggtitle("Bush")
+
+# Display new zoomed-in histograms in 2x2 grid using grid.arrange
+grid.arrange(trump_hist_zoom, cruz_hist_zoom, carson_hist_zoom, 
+             bush_hist_zoom, ncol = 2)
+```
+
+It's now clear that most of the contributions to the leading Republican
+campaigns were less than 100 dollars. Only Trump's campaign has a significant
+spike at the 200-dollar level.
+
+I'd like to see what the Republican contribution data looks like after a log10
+transformation on the x-axis.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Repub_Cont_Log_Transform}
+# Create histograms of contributions to Republicans faceted by candidate name.
+# Apply a log10 transformation to the x-axis on each histogram.
+# (Here, and in certain later blocks of code, I forgo using make_contb_hist due
+# to the axes transformations I want to try out.)
+qplot(x = contb_receipt_amt, 
+      data = subset(ga, cand_nm == 'Trump, Donald J.' 
+                    | cand_nm == "Cruz, Rafael Edward 'Ted'" 
+                    | cand_nm == 'Carson, Benjamin S.' 
+                    | cand_nm == 'Bush, Jeb')) +
+  scale_x_log10() +
+  facet_wrap(~cand_nm, ncol = 2)
+```
+
+The log10-transformed distribution of contributions received by Bush is
+relatively uniform. Carson, Cruz, and Trump received significantly more
+contributions than Bush, and the log-transformed distribution of
+contributions for these three are normal-ish, particularly those for Cruz and
+Trump.
+
+For the sake of completeness and comparison I'd like to look at the distribution
+of contributions to third-party candidates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Third_Party_Hist}
+# Create histograms of contributions to third-party candidates faceted by name.
+qplot(x = contb_receipt_amt, 
+      data = subset(ga, cand_party != 'Democrat' 
+                    & cand_party != 'Republican')) +
+  facet_wrap(~cand_nm, ncol = 3)
+```
+
+There are magnitudes fewer contributions to these third-party candidates but the
+data appears nonetheless long-tailed for Gary Johnson, the Libertarian nominee,
+and Jill Stein, the Green nominee. Based on what I looked at with the previous
+distributions, I'd like to see what a log10 transformation of the x-axis shows.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Third_Party_Hist_Log_Transform}
+# Create histograms of third-party candidate contributions faceted by name.
+# Apply a log10 scale transformation to the x-axis.
+qplot(x = contb_receipt_amt, 
+      data = subset(ga, cand_party != 'Democrat' 
+                    & cand_party != 'Republican')) +
+  scale_x_log10() +
+  facet_wrap(~cand_nm, ncol = 3)
+```
+
+The contributions to Johnson and Stein have normal-ish distributions, while
+McMullin's contribution distribution is comparatively uniform. McMullin only
+received 41 contributions in Georgia so the uniformity of the transformed
+distribution does not seem to convey any special meaning.
+
+Taking a step back, it'd be handy to look at the two major-party nominees,
+Trump and Clinton, side by side in both summaries and histogram form.
+
+Trump:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Trump_Dist_Summary}
+# Get a summary of contribution receipt amounts for Trump
+summary(trump$contb_receipt_amt)
+```
+
+Clinton:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Clinton_Dist_Summary}
+# Get a summary of contribution receipt amounts for Clinton
+summary(clinton$contb_receipt_amt)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Nominee_Histograms}
+# Create subset of data containing two major-party nominees
+major_party_nominees <- subset(ga, cand_nm == "Trump, Donald J."
+                               | cand_nm == "Clinton, Hillary Rodham")
+
+# Plot contribution receipt amounts histogram on continuous scale
+qplot(x = contb_receipt_amt,
+      data = major_party_nominees,
+      xlim = c(0, 1000)) +
+  facet_wrap(~cand_nm, ncol = 2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Nominees_Log_Transform}
+# Plot contribution receipt amounts histogram on log10 scale
+qplot(x = contb_receipt_amt, 
+      data = major_party_nominees) +
+  scale_x_log10() +
+  facet_wrap(~cand_nm, ncol = 2)
+```
+
+It's the Trump contribution distribution that contains the extreme outliers of
+-5,900 dollars and 12,500 dollars. Presumably these amounts reflect
+contributions that were divided up between the two elections - primary
+and general - or contributions that were refunded at least in part in order to
+remain under the 2,700-dollar individual threshold. 
+
+Trump had higher mean and median contribution amounts, but Clinton had a higher
+number of contributions overall, as is evident in the histograms. Both
+distributions appear approximately normal after a log10 transformation of the
+x-axis.
+
+## Contribution Counts by Candidate and Date
+I'd like to look at the dates that Clinton and Trump received contributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contrib_Dates_Clinton_Trump}
+# Create histograms of contribution counts by date for major party candidates
+# faceted by candidate name.
+qplot(x = contb_receipt_dt, 
+      data = major_party_nominees) +
+  scale_x_date() +
+  facet_wrap(~cand_nm)
+```
+
+The shapes of these graphs are really interesting. Clinton's contributions
+steadily climb for the most part, with a dip occuring after the month of August
+2016. Trump's contributions go from miniscule to quite a lot as July arrives,
+after which there's a dip in October (not unlike Clinton's dip in August) which
+precedes upticks of contributions right before and after the election.
+
+There's an uptick in July for both candidates, which may have something to do
+with the Democratic and Republican National Conventions taking place in the
+month of July. These conventions mark when these two candidates officially
+became the major party nominees.
+
+I'd like to get a closer look at the last three months of 2016. The election
+occurred on November 8, 2016, but there are contributions marked as late as
+December 31, 2016. I'm going to zoom in on these last three months and adjust
+the binwidth to display individual days.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Oct_Dec_Clinton_Trump}
+# Create a histogram of contribution counts between 10/1/2016 and 12/31/2016 by
+# date to the major-party nominees, faceted by candidate name.
+qplot(x = contb_receipt_dt, 
+      data = subset(ga, cand_nm == 'Clinton, Hillary Rodham' | 
+                      cand_nm == 'Trump, Donald J.'), binwidth = 1) +
+  scale_x_date(limits = c(as.Date('2016-10-01'), as.Date('2016-12-31'))) +
+  facet_wrap(~cand_nm)
+```
+
+Contributions to both campaigns climbed and spiked in mid-October before dipping
+slightly. From there the contributions to Clinton's campaign ramped up again,
+peaking in the days right before the election.
+
+Trump continued to receive contributions after Election Day. These contributions
+steadily trickled in through early December.
+
+Looking at a frequency polygon of this data might be useful.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Clinton_Trump_FreqPoly}
+# Create frequency polygons for contribution counts by date to major party
+# nominees, colored by candidate name.
+qplot(x = contb_receipt_dt, 
+      data = major_party_nominees,
+      binwidth = 1, geom = 'freqpoly', colour = cand_nm) +
+  scale_x_date(limits = c(as.Date('2016-10-01'), as.Date('2016-12-31')))
+```
+
+These frequency polygons provide a nice chart of the last couple of months of
+the general election and how contributions to the two major party nominees
+unfolded during that time. Clinton's fundraising in Georgia was considerably
+higher than that of Trump up until the moment of the election, after which Trump
+continued to receive contributions through the end of the calendar year.
+
+Here's a version of the figure above that encompasses the entire general
+election period after Clinton and Trump were formally nominated as their
+party's nominees.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, General_Election_FreqPoly}
+# Create frequency polygons for contribution counts by date to major party
+# nominees, colored by candidate name, for the entire general election period.
+qplot(x = contb_receipt_dt, 
+      data = major_party_nominees,
+      binwidth = 1, geom = 'freqpoly', colour = cand_nm) +
+  scale_x_date(limits = c(as.Date('2016-07-01'), as.Date('2016-12-31')),
+               date_breaks = "1 month")
+```
+
+In the multivariate plots section, I'd like to look at contribution totals by
+date. This seems like it'd be helpful to get a more full picture of how campaign
+contributions changed over the course of the election.
+
+## Contribution Amounts vs. Date
+I'd like to look at a scatterplot showing individual contribution amounts over
+the course of time. I'll start by taking a look at a scatterplot of every single
+transaction, positive and negative, over the range of dates represented in the
+dataset.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_All}
+# Create scatterplot of contribution amounts by date
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = ga) +
+  geom_point()
+```
+
+There is some serious overplotting going on here, and outliers in multiple
+directions. I'd like to zoom in on the area between 0 and 2700 dollars (the
+upper limit on individual contributions per election), as well as the time
+period from early 2015 through the end of 2016, where the vast majority of
+contributions appear to have taken place. I'll also use the `alpha` parameter
+for `geom_point` to add some transparency and hopefully reduce the effect of the
+overplotting.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_All_2700}
+# Create scatterplot of contribution amounts by date with 1/5 transparency,
+# from 3/1/2015-12/31/2016, under the amount of 2,700 dollars.
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = ga) +
+  geom_point(alpha = 0.2) +
+  scale_x_date(limits = c(as.Date('2015-03-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 2700))
+```
+
+Given my earlier explorations, it's no surprise that most contributions are
+under 500 dollars apiece. I'd like to zoom in even more and increase the
+transparency to see if that tells us anything new.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_All_500}
+# Create scatterplot of contribution amounts by date with 1/100 transparency,
+# from 3/1/2015-12/31/2016, under the amount of 500 dollars.
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = ga) +
+  geom_point(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2015-03-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500))
+```
+
+Even with transparency reduced to 1/100, we're still seeing massive overplotting
+between the amounts of 0 and 50 dollars. I'll zoom in once more and introduce
+some noise to the plot using `geom_jitter` to see what that shows.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_All_50}
+# Create scatterplot of contribution amounts by date with 1/100 transparency,
+# from 3/1/2015-12/31/2016, under the amount of 50 dollars.
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = ga) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2015-03-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 50))
+```
+
+This gives a better picture of the frequency of particular contribution levels
+over time. Starting in late 2015, contributions at the 25- and 50-dollar
+levels ramp up at what appears to be an almost identical rate and do not let
+up until early November 2016. Most contribution amounts are multiples of 5. The
+most solid-looking (but not lengthiest) lines observable in the graph are
+at the 5- and 10-dollar levels. The lengthiest lines are at the 25- and
+50-dollar levels.
+
+## Individual Contributor Totals
+If possible I'd like to take a stab at looking at total contributions from
+individual contributors in Georgia. In order to do this I'm going to use the
+`group_by`, `select`, and `summarise` functions from the `dplyr` package to try
+and boil down the data.frame to individual contributor names and their total
+contributions to different candidates (allowing for the possibility that
+they may have donated to more than one candidate).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Indiv_Contrib_Reshape}
+indiv_columns <- select(ga, contbr_nm, contbr_city, contbr_zip, contbr_employer,
+                       contbr_occupation, cand_nm, contb_receipt_amt)
+indiv_columns$contbr_zip <- as.numeric(substr(indiv_columns$contbr_zip, 0, 5))
+
+indiv_totals <- indiv_columns %>% 
+  group_by(contbr_nm, contbr_city, contbr_zip, contbr_employer,
+                          contbr_occupation, cand_nm) %>% 
+  summarise(sumcontb = sum(contb_receipt_amt))
+```
+
+Here are the first 20 rows of a data.frame in which I try to consolidate
+individual contributor totals into a row for each contributor and the total
+they gave to a particular candidate:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Head_Individual_Totals}
+# Look at first 20 rows of data.frame containing attempt at individual total
+head(indiv_totals, 20)
+```
+
+There are a few problems that make it challenging to do a proper analysis of
+individual contribution totals. The primary issue is that it's difficult to
+definitively consolidate individual contributors into rows that accurately
+reflect the total they've contributed to particular candidates.
+
+The reason for this problem is not that the information is inaccurate but that
+contributors may have given different answers to the same demographic questions
+with different contributions they gave. For example, the name David Aaron
+appears in rows 8 and 9 of the data.frame excerpted above. Both rows have the
+same name, city, zip code, profession, and candidate (Trump) but different
+employers are specified. Is this one person who changed employers at some point
+during the election? Or do these rows represent a father and son with the same
+name and profession? It's hard to say for sure.
+
+# Form Type vs. Candidate Party
+I'm curious if there's any relationship between party and form type.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Form_Types_by_Party}
+# Display summary of form types by candidates' political parties
+by(ga$form_tp, ga$cand_party, summary)
+```
+
+There were almost twice as many contributions to Republican candidates from
+"authorized committees" than there were to Democratic candidates. Meanwhile
+nearly all of the contributions to third-party candidates were from individuals.
+
+In the multivariate plots section I'll take a closer look at whether there are
+any relationships between form type and contribution amount at different times
+in the election.
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+One relationship I observed is between date and the number of contributions to
+major-party candidates. In particular Trump's contributions from Georgia
+spiked considerably around July 2016, the month of both the Republican
+and Democratic National Conventions.
+
+Another relationship I observed is between party and contribution amount.
+Republican candidates received considerably higher contribution dollar amounts 
+on average versus Democratic candidates. I thought this was particularly
+notable given the high number of Republican candidates who were in the running
+early in the election.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+There were almost twice many "authorized committee" contributions to Republican
+candidates than there were to Democratic candidates. 
+
+Additionally, all but one contribution to third-party nominees were made by
+individuals and not by committees.
+
+I also realized that, due to the wide range of potentially correct answers (as
+of the time of a contribution) an individual contributor could specify different
+demographic answers each time and it'd still be good data, even if it's hard to
+organize by individual donor.
+
+### What was the strongest relationship you found?
+The strongest relationship I came across is the relationship between candidate
+party and contribution amount. For Trump and all the other Republican
+candidates, the mean and median contribution levels were much higher than they
+were for Democratic candidates, despite the glut of Republican candidates
+early on in the elections.
+
+# Multivariate Plots Section
+
+## A Closer Look at Contributions Over Time
+Expanding on my bivariate explorations, I'd like to look at how the individual
+candidates compared to each other as far as the contributions they've received
+over time.
+
+I'll look at Trump's contribution amounts over time at first, starting with a
+scatterplot that shows all the contributions and refunds, including all the
+outliers, alongside the previous graph.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_All_Trump}
+# Create scatterplot of contribution amounts to Trump by date
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = trump) +
+  geom_point() +
+  ggtitle("Contributions to Trump")
+```
+
+This is kind of ugly and overplotted, but it at least initially looks quite
+similar to the first graph I made of contributions over time. I'd like to
+compare this distribution with the plot of all contributions. In light of the
+earliest Trump data going back as far as late 2014, I'll put this new
+plot and the original plot on the same scale to get a sense of the change over
+time.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_Trump_V_All}
+# Create plot for all contributions from 12/2014 through 12/2016
+all_contbs_time <- ggplot(aes(x = contb_receipt_dt,
+                              y = contb_receipt_amt), data = ga) +
+  geom_point() +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ggtitle("All Contributions Over Time (Dec. '14 - Dec. '16)")
+
+# Create plot for all contributions to Trump 12/2014 - 12/2016
+trump_contbs_time <- ggplot(aes(x = contb_receipt_dt,
+                                y = contb_receipt_amt), data = trump) +
+  geom_point() +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ggtitle("Contributions to Donald Trump Over Time (Dec. '14 - Dec. '16)")
+
+# Display both plots create above in one column
+grid.arrange(all_contbs_time, trump_contbs_time, ncol = 1)
+```
+
+The set of contributions to all candidates goes back as far as the very tail end
+of 2014 and the first contributions to Trump's primary campaign start showing up
+in June 2015, and take a massive uptick shortly before July 2016. As mentioned
+earlier, this is when the Republican and Democratic Conventions were held. 
+
+Having these two graphs on the same y-scale and the same x-axis length reaffirms
+that a lot of the highest and lowest contribution amounts in the dataset are
+accounted for in the contributions to Trump.
+
+Let's look at the contributions over time to Clinton's campaign and then compare
+them with the two scatterplots we've been looking at.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_Clinton}
+# Plot all contributions to Clinton over time on Date scale
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = clinton) +
+  geom_point() +
+  ggtitle("Contributions to Clinton")
+```
+
+Once again there's significant overplotting here, and, due to its variance, this
+data also shows up on a different y-scale than the one we saw looking at the
+state's contributions to Trump's campaign. The earlier summaries showed that all
+of the reported individual contributions to Clinton's campaign fall between
+-2,700 and 2,700 dollars. The vast majority of contributions appear to be in the
+1- to 500-dollar range.
+
+Before zooming in to take a closer look, I'll take a quick glance at how the
+previous two scatterplots compare with that of Clinton when all three are
+plotted on the same y-scale, positive and negative outliers included.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_T_vs_C_vs_All}
+# Create scatterplot for all contributions to Clinton from 12/2014 to 12/2016
+clinton_contbs_time <- ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt),
+                              data = clinton) +
+  geom_point() +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ylim(-5900, 12500) +
+  ggtitle("Contributions to Hillary Clinton Over Time (Dec. '14 - Dec. '16)")
+
+# Display Clinton scatterplot in one column below all contribs / Trump contribs
+grid.arrange(all_contbs_time, trump_contbs_time, clinton_contbs_time, ncol = 1)
+```
+
+The contributions to Clinton are more overplotted than those received by Trump
+and are visibly higher in sheer quantity and in consistency of occurrence over
+time, even if the variance is not as high as that of Trump. This graph certainly
+makes it look like Clinton's contributions comprise a big percentage of the
+overall contributions, but the overplotting makes it hard to tell what's really
+going on.
+
+I'm going to put all three of these plots on a y-scale that covers the range of
+contribution amounts and refunds that's visible in Clinton's scatterplot. I'll
+also add some transparency and noise in order to be able to look at them in a
+way that's useful. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_T_vs_C_vs_All_Adj}
+# Save previous plots to variables and plot on same y-scale (0 to 500)
+all_contbs_time_adj <- ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt),
+                              data = ga) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ylim(0, 500) +
+  ggtitle("All Contributions Over Time (Dec. '14 - Dec. '16)")
+
+trump_contbs_time_adj <- ggplot(aes(x = contb_receipt_dt, 
+                                    y = contb_receipt_amt), data = trump) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ylim(0, 500) +
+  ggtitle("Contributions to Donald Trump Over Time (Dec. '14 - Dec. '16)")
+
+clinton_contbs_time_adj <- ggplot(aes(x = contb_receipt_dt, 
+                                      y = contb_receipt_amt), data = clinton) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  ylim(0, 500) +
+  ggtitle("Contributions to Hillary Clinton Over Time (Dec. '14 - Dec. '16)")
+
+grid.arrange(all_contbs_time_adj, trump_contbs_time_adj,
+             clinton_contbs_time_adj, ncol = 1)
+```
+
+It looks like both Clinton and Trump were drawing in a significant amount of
+contributions in the range of 100 to 300 dollars during the months between the
+party conventions and the election, but Clinton had a more consistent amount of
+contributions in the 1- to 100-dollar range up until the election.
+
+After Trump won, a small amount of contributions came in before 2016's end, many
+of which were around the 100-dollar amount.
+
+In light of my discovery that the vast majority of contributions were 500
+dollars or less, I'd like to look at a scatterplot of contributions in the 1- to
+500-dollar range, and impose a `geom_line` over the scatterplot showing median
+contribution levels, using a different color for each group.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_Adj_500}
+# Create scatterplot showing contributions over time between 0 and 500 dollars
+# Save to variable
+all_contbs_time_adj_500 <- ggplot(aes(x = contb_receipt_dt,
+                                      y = contb_receipt_amt), data = ga) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add orange line representing median contribution amount
+  geom_line(stat = 'summary', fun.y = median, colour = 'orange') +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("All Contributions (< $500) (Dec. '14 - Dec. '16)")
+
+# Create plot showing contributions to Trump over time between 0 and 500 dollars
+# Save to variable
+trump_contbs_time_adj_500 <- ggplot(aes(x = contb_receipt_dt,
+                                        y = contb_receipt_amt), data = trump) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add red line representing median contribution amount
+  geom_line(stat = 'summary', fun.y = median, colour = 'red') +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("Contributions (<$500) to Donald Trump (Dec. '14 - Dec. '16)")
+
+# Create plot showing contributions to Clinton over time between 0 and 500 
+# dollars. Save to variable.
+clinton_contbs_time_adj_500 <- ggplot(aes(x = contb_receipt_dt,
+                                          y = contb_receipt_amt),
+                                      data = clinton) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add blue line representing median contribution amount
+  geom_line(stat = 'summary', fun.y = median, colour = 'blue') +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("Contributions (<$500) to Hillary Clinton (Dec. '14 - Dec. '16)")
+
+# Plot all three scatterplots together in one column
+grid.arrange(all_contbs_time_adj_500, trump_contbs_time_adj_500,
+             clinton_contbs_time_adj_500, ncol = 1)
+```
+
+These median lines are really quite noisy so I'll also try looking at this data
+using `geom_smooth` to plot conditional means.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_Smooth_500}
+# Create scatterplot showing contributions over time between 0 and 500 dollars
+# Save to variable
+all_contbs_time_smooth_500 <- ggplot(aes(x = contb_receipt_dt,
+                                      y = contb_receipt_amt), data = ga) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add orange smoother line
+  geom_smooth(colour = 'orange') +
+  # 
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("All Contributions (< $500) (Dec. '14 - Dec. '16)")
+
+# Create plot showing contributions to Trump over time between 0 and 500 dollars
+# Save to variable
+trump_contbs_time_smooth_500 <- ggplot(aes(x = contb_receipt_dt,
+                                        y = contb_receipt_amt), data = trump) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add red smoother line
+  geom_smooth(colour = 'red') +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("Contributions (<$500) to Donald Trump (Dec. '14 - Dec. '16)")
+
+# Create plot showing contributions to Clinton over time between 0 and 500 
+# dollars. Save to variable.
+clinton_contbs_time_smooth_500 <- ggplot(aes(x = contb_receipt_dt,
+                                          y = contb_receipt_amt),
+                                      data = clinton) +
+  # Set transparency to 1/100 and jitter points on scatterplot
+  geom_jitter(alpha = 0.01) +
+  # Add blue smoother line
+  geom_smooth(colour = 'blue') +
+  scale_x_date(limits = c(as.Date('2014-12-01'), as.Date('2016-12-31'))) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("Contributions (<$500) to Hillary Clinton (Dec. '14 - Dec. '16)")
+
+# Plot all three scatterplots together in one column
+grid.arrange(all_contbs_time_smooth_500, trump_contbs_time_smooth_500,
+             clinton_contbs_time_smooth_500, ncol = 1)
+```
+
+It'd take some careful parsing to attribute particular events to the various
+peaks and dips in these graphs, but there are some noticeable trends going on
+here. It looks like although Trump got a significant amount of contributions
+from Georgia around the Republican National Convention in July, the number of
+contributions he received later on was for the most part a trickle compared to
+the amount of contributions coming in for Clinton. 
+
+However, the median and median contribution amounts are, for much of election
+season, much higher for Trump than they were for Clinton. He may not have had
+the same number of supporters in Georgia as Clinton did, but the ones who
+pledged money to his campaign gave bigger sums of money on average. There is a
+significant jump up in mean contribution amount for Trump in the couple of
+months after his nomination.
+
+It's notable that the time periods in which there are a high number of
+contributions coincide with a lower median contribution amount. This seems to
+make sense in light of the fact that most people are unlikely to be able to give
+very high contributions to presidential candidates, even if they want to.
+
+I'm going to zero in on the period of the general election - July through
+November of 2016. It'd be interesting to see what donations under $500 looked
+like over time during this period. In addition to a scatterplot showing all the
+contributions, as well as scatterplots of the contributions received by Clinton
+and Trump, I'll make a fourth scatterplot showing contributions received by
+third-party candidates during the general election.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rcpt_Dt_Amt_T_vs_C_vs_All_Gen}
+# Create scatterplot showing all contributions during general election period
+# Save to variable
+all_contbs_time_general <- ggplot(aes(x = contb_receipt_dt,
+                                      y = contb_receipt_amt), data = ga) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2016-07-01'), as.Date('2016-12-31')),
+               breaks = seq(as.Date('2016-07-01'), as.Date('2016-12-31'),
+                            'month')) +
+  ylim(0, 500) +
+  ggtitle("All Contributions (< $500) Over Time (Jul. '16 - Dec. '16)")
+
+# Create plot showing all contributions to Trump during general election
+# Save to variable
+trump_contbs_time_general <- ggplot(aes(x = contb_receipt_dt,
+                                        y = contb_receipt_amt),
+                                    data = trump) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2016-07-01'), as.Date('2016-12-31')),
+               breaks = seq(as.Date('2016-07-01'), as.Date('2016-12-31'),
+                            'month')) +
+  ylim(0, 500) +
+  ggtitle("Contributions (<$500) to Donald Trump (Jul. '16 - Dec. '16)")
+
+# Create plot showing all contributions to Clinton during general election
+# Save to variable
+clinton_contbs_time_general <- ggplot(aes(x = contb_receipt_dt,
+                                          y = contb_receipt_amt),
+                                  data = clinton) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2016-07-01'), as.Date('2016-12-31')),
+               breaks = seq(as.Date('2016-07-01'), as.Date('2016-12-31'),
+                            'month')) +
+  ylim(0, 500) +
+  ggtitle("Contributions (<$500) to Hillary Clinton (Jul. '16 - Dec. '16)")
+
+# Create plot showing all contributions to third-party candidates during general
+# Save to variable
+third_party <- subset(ga, cand_party != 'Democrat'
+                      & cand_party != 'Republican')
+
+third_party_contbs_time_gen <- ggplot(aes(x = contb_receipt_dt,
+                                          y = contb_receipt_amt),
+                                      data = third_party) +
+  geom_jitter(alpha = 0.01) +
+  scale_x_date(limits = c(as.Date('2016-07-01'), as.Date('2016-12-31')),
+               breaks = seq(as.Date('2016-07-01'), as.Date('2016-12-31'),
+                            'month')) +
+  ylim(0, 500) +
+  ggtitle("Contributions (<$500) to 3rd Party Candidates (Jul. '16 - Dec. '16)")
+
+# Plot all four scatterplots together in one column
+grid.arrange(all_contbs_time_general, trump_contbs_time_general,
+             clinton_contbs_time_general, third_party_contbs_time_gen, ncol = 1)
+```
+
+The bulk of the contributions received during the general election clearly went
+to Clinton, whose solid black streak under the $100 level through election day
+represents the most consistent intake over time. With the level of transparency
+here, the contributions to third-party candidates is negligible, with the
+darkest area showing during the month of July (and not a very dark area at
+that). 
+
+## Debates and Campaign Turning Points
+
+I do wonder about the ebb and flow of contributions to Trump in Georgia over the
+course of this timespan, particularly because he won the state despite being
+out-fundraised. Perhaps the presidential debates had some kind of effect on the
+number of contributions that came in. I'll insert some vertical dotted lines
+representing the presidential debate dates - 9/26 (blue), 10/9 (purple), and
+10/19 (red).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, General_Election_and_Debates}
+# Add vertical lines to Trump and Clinton scatterplots representing debates
+
+# Create new scatterplot containing general election contributions to Trump
+trump_contbs_time_gen_debates <- trump_contbs_time_general +
+  # Add blue dashed line representing September 26 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-09-26'))), linetype = 4,
+             colour = 'blue') +
+  # Add purple dashed line representing October 9 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-09'))), linetype = 4,
+             colour = 'purple') +
+  # Add red dashed line representing October 19 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-19'))), linetype = 4,
+             colour = 'red')
+
+# Create new scatterplot containing general election contributions to Clinton
+clinton_contbs_time_gen_debates <- clinton_contbs_time_general +
+  # Add blue dashed line representing September 26 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-09-26'))), linetype = 4,
+             colour = 'blue') +
+  # Add purple dashed line representing October 9 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-09'))), linetype = 4,
+             colour = 'purple') +
+  # Add red dashed line representing October 19 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-19'))), linetype = 4,
+             colour = 'red')
+
+# Display these new scatterplots together in a single column
+grid.arrange(trump_contbs_time_gen_debates, clinton_contbs_time_gen_debates,
+             ncol = 1)
+```
+
+There appear to be very slight bumps up in contributions for both Clinton and
+Trump after the first debate on September 26th. This is noticeable in the
+streaks that show up at the 100-, 200-, 250-, and 400-dollar levels for Trump,
+and at the 100- and 250-dollar levels for Clinton in addition to her already
+sustained levels of contributions of 50 dollars or less.
+
+It's more difficult to notice any change after the second debate on October 9th.
+There may be a very slight bump to contributions to Trump at the 100-, 200-,
+and 250-dollar levels. The third debate seems to coincide with darkened sections
+of the scatterplot showing up at the 200-, 250-, and 400-dollar levels for
+Trump.
+
+There were several dramatic news stories during the election that seemed to be
+turning points. I'm curious whether the tape that surfaced of Trump's lewd
+conversation with Billy Bush (released 10/7), as well as FBI director James
+Comey's letter to the U.S. Congress (released 10/28) had any noticeable effect
+on the number and amount of contributions coming in to the major candidates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Tru_Clint_General_Contbs_Events}
+# Add two election turning points to scatterplots of general election
+# contributions to Trump and Clinton
+
+# Create scatterplot showing contributions to Trump during general election
+trump_contbs_time_gen_events <- trump_contbs_time_general +
+  # Add vertical green dashed line representing date of release of Bush tape
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-07'))), linetype = 4,
+             colour = 'green') +
+  # Add vertical orange dashed line representing date of Comey letter
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-28'))), linetype = 4,
+             colour = 'orange')
+
+# Create scatterplot showing contributions to Clinton during general election
+clinton_contbs_time_gen_events <- clinton_contbs_time_general +
+  # Add vertical green dashed line representing date of release of Bush tape
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-07'))), linetype = 4,
+             colour = 'green') +
+  # Add vertical orange dashed line representing date of Comey letter
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-28'))), linetype = 4,
+             colour = 'orange')
+
+# Display these new scatterplots together in one column
+grid.arrange(trump_contbs_time_gen_events, clinton_contbs_time_gen_events,
+             ncol = 1)
+```
+
+I'm having a harder time noticing any effects here - neither of these vertical
+lines representing the dates in question appear to correspond with any major
+changes in the scatterplot. There may be a very slight increase in contributions
+to Clinton after the Trump-Billy Bush tape, but it's hard to tell. That's not to
+say that these events didn't have an effect on the election - the Comey letter
+in particular is [widely argued](https://fivethirtyeight.com/features/the-comey-letter-probably-cost-clinton-the-election/) to have cost Clinton the election. Effects on
+the number of contributions and the amounts of these contributions are more
+difficult to pick out in these scatterplots.
+
+## Contribution Totals by Day
+The next set of multivariate plots I'd be interested in looking at are total
+contributions in dollars received each day by each candidate over the course of
+the primary and general elections in 2016.
+
+What I'll do first is use `dplyr` to select and reshape the data in order to
+get daily total contributions for every candidate in a R data.frame. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contb_Totals_by_Day_Dplyr}
+# Select particular columns from dataset: candidate name, contribution receipt
+# date, contribution receipt amount, and transaction ID.
+daily_totals_columns <- select(ga, cand_nm, contb_receipt_dt, contb_receipt_amt,
+                               tran_id)
+# Group the new data.frame by candidate name and receipt date, and calculate
+# daily totals to add as a column to these new in daily_totals data.frame
+daily_totals <- daily_totals_columns %>% 
+  group_by(cand_nm, contb_receipt_dt) %>% 
+  summarise(daily_total = sum(contb_receipt_amt))
+```
+
+I'll do a set of line graphs on one set of axes using `ggplot2`. The color of
+each line in the plot represents an individual candidate.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contb_Totals_by_Day_LinePlot}
+# Create line graphs of daily contribution totals received, colored by candidate
+ggplot(aes(x = contb_receipt_dt, y = daily_total, colour = cand_nm),
+       data = daily_totals) +
+  geom_line()
+```
+
+This map is colorful but also very noisy. It's easy to see the pink line on the
+right end of the graph representing Trump, which has a huge spike in the middle
+and has a lot of noisy variance approaching the election. More colors are
+perceptible on the left side of the graph when there were still a lot of
+Republican candidates contending for the nomination. 
+
+It may be helpful to zoom in on this a bit. I'll look at 2016 only and see if
+this imparts anything useful.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Totals_Zoom}
+# Create line graphs of daily contribution totals received, colored by candidate
+ggplot(aes(x = contb_receipt_dt, y = daily_total, colour = cand_nm),
+       data = daily_totals) +
+  geom_line() +
+  # Zoom in to 2016 and contributions between 0 and 5,400 dollars
+  coord_cartesian(xlim = c(as.Date('2016-01-01'), as.Date('2016-12-31')),
+                  ylim = c(0, 5400))
+```
+
+As colorful as this is, it's an incredibly noisy graph and is kind of hard to
+glean information from. 
+
+Perhaps looking at daily contribution totals by party would be useful. First I'll
+use `dplyr` to create a new data.frame containing daily contribution totals by
+party.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Party_Contb_Totals}
+# Select columns from dataset: party, date, amount, transaction ID
+daily_party_totals_cols <- select(ga, cand_party, contb_receipt_dt, 
+                                  contb_receipt_amt, tran_id)
+# Group columns in new data.frame by party and receipt date
+# Add new column for sum daily total contributions received by party
+daily_party_totals <- daily_party_totals_cols %>% 
+  group_by(cand_party, contb_receipt_dt) %>% 
+  summarise(daily_party_total = sum(contb_receipt_amt))
+```
+
+Next I'll plot contribution totals by day in a line graph, with the line colors
+reflecting political party.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Party_Contb_Totals_Graph}
+# Plot line graphs for 2016 showing contributions received by candidate party
+ggplot(aes(x = contb_receipt_dt, y = daily_party_total, colour = cand_party),
+       data = daily_party_totals) +
+  geom_line() +
+  scale_x_date(lim = c(as.Date('2016-01-01'), as.Date('2016-12-31')))
+```
+
+This is much easier to read than the graph showing every one of the candidates.
+It appears that the most successful fundraising parties day by day were the
+Democrats and the Republicans, with both of those parties intermittently
+passing up each other as far as daily total contributions in dollars. The
+variance in Trump's daily totals is much higher than that of Clinton, but he
+still appeared to out-fundraise her on at least a few days during the election.
+
+I'd also like to take a look at daily totals by candidate gender. I'll use
+`dplyr` to make a data.frame that reflections daily totals by candidate gender.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Gender_Totals}
+# Select columns from ga data.frame to create new data.frame: gender,
+# contribution receipt amount, receipt date, and transaction ID.
+daily_totals_gender_cols <- select(ga, cand_gender, contb_receipt_dt, 
+                                   contb_receipt_amt, tran_id)
+# Group new data.frame by gender and date, and add new column with daily total
+daily_totals_gender <- daily_totals_gender_cols %>% 
+  group_by(cand_gender, contb_receipt_dt) %>% 
+  summarise(daily_total_gender = sum(contb_receipt_amt))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Gender_Totals_Graph}
+# Plot new daily totals by gender data.frame for year 2016
+# Set upper & lower limits to 0 and 125000 dollars
+ggplot(aes(x = contb_receipt_dt, y = daily_total_gender, colour = cand_gender),
+       data = daily_totals_gender) +
+  geom_line() +
+  coord_cartesian(xlim = c(as.Date('2016-01-01'), as.Date('2016-12-31')),
+                  ylim = c(0, 125000))
+```
+
+It appears that for most of 2016 there were more high daily dollar-amounts going
+to male candidates than female candidates. There are just a few days in the
+first half of the year in which female candidates out-fundraise the male
+candidates. The fact that female candidates managed to be ahead at this stage,
+when there are so many male competitors, seems noteworthy.
+
+### Daily Totals vs. Election Turning Points
+I'd like to see if those turning points I looked at a bit earlier have any sort
+of discernible pattern atop the graph of contributions by party.
+
+First I'll add dashed vertical lines representing the debates to the graphs of
+daily totals by party.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Totals_Party_Debates}
+# Plot line graphs for 2016 showing contributions received by candidate party
+ggplot(aes(x = contb_receipt_dt, y = daily_party_total, colour = cand_party),
+       data = daily_party_totals) +
+  geom_line() +
+  # Add blue dashed line representing September 26 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-09-26'))), linetype = 4,
+             colour = 'blue') +
+  # Add purple dashed line representing October 9 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-09'))), linetype = 4,
+             colour = 'purple') +
+  # Add red dashed line representing October 19 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-19'))), linetype = 4,
+             colour = 'red') +
+  # Restrict x-axis to September 1 through November 15
+  # Restrict y-axis to contributions between 0 to 100000 without removing values
+  coord_cartesian(xlim = c(as.Date('2016-09-01'), as.Date('2016-11-15')),
+                  ylim = c(0, 100000))
+```
+
+These line graphs give a much different look at the potential effects of the
+presidential debates on campaign contributions from Georgia.
+
+All three debates appear to mark points where Georgia's contributions to the
+Democratic candidate (Clinton) dropped and contributions to the Republican
+candidate (Trump) increased. There's all sorts of up-and-down activity before,
+in between, and after the debates, but all of a sudden it looks like the debates
+helped Trump and hurt Clinton when it came to Georgia contributions.
+
+There doesn't appear to be a whole lot of connection between the debates and
+the contributions hauled in by the third-party candidates. This would seem to
+make sense in light of the third-party candidates not being invited to take part
+in the televised debates. However, one of the main spikes in contributions to
+the Libertarian candidate, Gary Johnson, shows up shortly after the first
+debate. Perhaps right-leaning voters in the state took an increased interest in
+Johnson after the first debate.
+
+Next I'll turn to the aforementioned turning point events - the Billy Bush tape
+and James Comey's letter to Congress. I'll try laying lines representing those
+events over the graphs of daily totals by party.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Totals_Party_Events}
+ggplot(aes(x = contb_receipt_dt, y = daily_party_total, colour = cand_party),
+       data = daily_party_totals) +
+  geom_line() +
+  # Add vertical green dashed line representing Billy Bush tape release
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-07'))), linetype = 4,
+             colour = 'green') +
+  # Add vertical orange dashed line representing date of Comey letter
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-28'))), linetype = 4,
+             colour = 'orange') +
+  # Restrict x-axis to September 1 through November 15
+  # Restrict y-axis to contributions between 0 to 100000 without removing values
+  coord_cartesian(xlim = c(as.Date('2016-09-01'), as.Date('2016-11-15')),
+                  ylim = c(0, 100000))
+```
+
+There was a drop in contributions to both Trump and Clinton right after the
+release of the Billy Bush tape. Additionally, there appears to be a drop in
+contributions for Trump right after the James Comey letter while there's a brief
+increase in contribution totals for Clinton. These outcomes are rather different
+than I expected - I thought that the Billy Bush tape would help Clinton and hurt
+only Trump, and thought that the Comey letter would help Trump and hurt only
+Clinton. It looks like, in this particular case, my expected outcomes were
+incorrect.
+
+## Election Type vs. Contribution Amount
+I am curious whether contribution amounts are affected by the type of election
+taking place, whether it's the primary or general election. First I'll use the
+`by` function to take a look at summaries of contribution amounts in each
+election.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contributions_by_Election_Type}
+# Display summaries of contribution amounts by election type
+by(ga$contb_receipt_amt, ga$election_tp, summary)
+```
+
+The mean and median contribution amounts for primary elections (labeled as
+`P2016` in the `election_tp` column) are only slightly lower than the mean and
+median for general elections (labeled as `G2016` in the `election_tp` column).
+At first glance, it doesn't appear that there's a huge difference in overall
+contribution amounts between the 2016 primary and general elections.
+
+I'd like to look more specifically at summaries of contribution amounts to
+the two major-party candidates in each election.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Trump_Contbs_by_Type_Summary}
+by(trump$contb_receipt_amt, trump$election_tp, summary)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Clinton_Contbs_by_Type_Summary}
+by(clinton$contb_receipt_amt, clinton$election_tp, summary)
+```
+
+Trump's median and mean contribution amounts nearly doubled once the general
+election was underway. Clinton's median contribution amount, meanwhile, was
+exactly the same for the primary and general - 25 dollars - and the mean
+contribution amount went down during the general election from 128.2 dollars
+to 88.59 dollars.
+
+In light of my earlier finding that around 450 transactions have an `election_tp`
+of "NA" I'll take a look at a summary of contribution amounts labeled this way.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contributions_Type_NA_2016}
+summary(na_2016$contb_receipt_amt)
+```
+
+The variance of contribution amounts for transactions labeled "NA" is huge -
+there's an 8,000-dollar difference between the biggest refund and the maximum
+contribution of 2,700 dollars. More noteworthy than these outlying values is
+the fact that the mean and median contribution amounts for contributions not
+associated with an election type is considerably higher than the overall mean
+and median contribution levels or the mean and median for either major-party
+candidate. Over 400 of these "NA" contributions went to Trump's campaign.
+
+Let's look at a quick scatterplot of campaign contributions over time colored
+by the type of election. In order to keep the scatterplot from being
+overplotted I'll set the transparency to 1/100 as I have with earlier
+scatterplots.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Tp_Scatterplot}
+# Create scatterplot of contributions over time colored by election type
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt,
+           colour = election_tp), data = ga) +
+  # Set transparency to 1/100
+  geom_point(alpha = 0.01) +
+  # Show contributions between 0 and 2700 without removing any data
+  coord_cartesian(ylim = c(0, 2700)) +
+  # Override the transparency aesthetic for key so colors are visible
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+As the dates progress from left to right, we see that the colors change from
+turquoise, representing the primary election, to vermilion, representing the
+general election. The variance is not visibly different between these two
+elections, but the area between about 500 and 1,000 dollars becomes more filled
+in toward the end of 2016 as Election Day approaches in early November.
+
+It's not totally clear whether election type is strictly associated with date,
+especially considering the "other" 2020 category that that one contribution is
+labeled with. I'll look at a summary of contribution date by election type.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Receipt_Date_by_Election_Type}
+by(ga$contb_receipt_dt, ga$election_tp, summary)
+```
+
+General and primary election contributions start showing up as early as October
+2013, it turns out. Even though it's hard to see any real crossover in the
+scatterplot there are some general election contributions sprinkled in during
+the period before when the general election actually began.
+
+I'd like to take a look at the data in the previous graph using a `geom_smooth`
+with a linear model method. Maybe smooth conditional means will be helpful for
+understanding contribution amounts over time as they relate to election type.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Election_Type_Smooth_LM}
+# Plot smooth conditional means of contributions over time by election_tp
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), data = ga) +
+  geom_smooth(aes(colour = election_tp), method = 'lm')
+```
+
+The smoothers are a helpful but slightly oversimplified representation of the
+contribution data over time. It's obvious that there is high variance in general
+electioncontribution amounts in 2015, at which point many candidates are
+starting to announce their intentions of running in 2016. As the data enters
+2016, the means have much less variance, and the mean contribution to the
+general election remains a bit higher on average than the mean contribution to
+the primary election. The mean and median contribution amounts vary from
+candidate to candidate but these smoothers give a sense of the gradual decrease
+in mean contribution amounts as nomination solidify and more and more people
+contribute to the various campaigns.
+
+The approximately 450 contributions with election type "NA" have quite a bit of
+variance, and seem to increase in mean amount as Election Day approaches.
+Additionally, the handful of "other" 2016 contributions are represented by a
+short, nearly vertical green line that reflects the high mean contribution
+amount associated with those contributions.
+
+I think what accounts for the high variance visible on the left side of the
+graph of general election contributions is the relatively small number of
+contributions coming in at that time. One or a few high contributions around
+this time could set the mean and median as high as 2,700 dollars if that's the
+only contribution received that day.
+
+As more people start getting engaged with the campaigns underway, the mean comes
+down. I think this may be because, as mentioned earlier, most people don't have
+enough expendable income to pledge high amounts of money to presidential
+campaigns, even if they want to.
+
+## Candidate Party and Gender vs. Contribution Amount
+After loading in the dataset I added columns for candidate party and gender.
+I'd like to take a quick look at whether there are noticeable differences in
+contribution amounts based on gender and political party.
+
+The fact that Trump's mean and median contribution amounts both inside and
+outside of Atlanta are so much higher than Clinton's leads me to guess that
+contributions to the Republican candidates have higher amounts on average
+than contributions to Democratic candidates.
+
+First I'll use the `by` function to get an idea of what the distributions look
+like.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Party_Summary}
+# Summarize contribution amounts by candidate party
+by(ga$contb_receipt_amt, ga$cand_party, summary)
+```
+
+I'll also look at a scatterplot with transparency added and zoomed in on
+contributions under 500 dollars.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Party_Scatterplot}
+# Create scatterplot of contributions colored by candidate party
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt,
+           colour = cand_party), data = ga) +
+  # Add transparency of 1/100
+  geom_point(alpha = 0.01) +
+  # Restrict x-axis to 2016 and y-axis to contributions under 500
+  coord_cartesian(xlim = c(as.Date('2016-01-01'), as.Date('2016-12-31')),
+                  ylim = c(0, 500)) +
+  # Do not add transparency to plot's legend
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+Democrats have the lowest median and mean contribution amounts by far of all the
+parties represented in the data set. The median amount (25 dollars) is half that
+of the Republican median of 50 dollars, while the mean contribution amount for
+Republican candidates is 72 dollars higher than the mean contribution to
+Democrats.
+
+As for third-party contributions, Green, Independent, and Libertarian candidates
+all have a median contribution level of 100. The Libertarian candidate, Gary
+Johnson, has the highest mean contribution amount at 224 dollars, followed 
+closely by Jill Stein at 219.80. 
+
+I'd also like to look at how contribution amounts break down by gender. Once
+again I'll run the `by` function and plot a scatterplot with a transparency of
+1/100, zooming in on contributions of 500 dollars or less.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Gender_Summary}
+# Summarize contribution amounts by candidate gender
+by(ga$contb_receipt_amt, ga$cand_gender, summary)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_by_Gender_Scatterplot}
+# Create scatterplot of contributions colored by candidate gender
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt,
+           colour = cand_gender), data = ga) +
+  # Add transparency of 1/100
+  geom_point(alpha = 0.01) +
+  # Restrict x-axis to the year 2016 and y-axis to contributions under 500
+  coord_cartesian(xlim = c(as.Date('2016-01-01'), as.Date('2016-12-31')),
+                  ylim = c(0, 500)) +
+  # Do not apply transparency to colors in legend 
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+The median contribution to female candidates is 25 dollars while the median
+contribution to male candidates is 40 dollars. Mean contributions are higher
+for men as well: 122.5 dollars to men versus 104.3 dollars to women. Once again
+it's not immediately apparent whether the lower mean and median for the female
+candidates has to do with Clinton's high number of contributions, or if it is
+due rather to her party affiliation or some other cause.
+
+## Atlanta vs. the Rest of Georgia
+I'm curious how contributions from voters in Atlanta compared to contributions
+from the rest of the state. There are 10 counties that are considered to be part
+of the metro Atlanta area, but I'm only going to deal with contributions from
+the City of Atlanta for the purposes of this investigation.
+
+It'd be simplest to create subsets of the data by setting the city name equal to
+or not equal to 'Atlanta'. However, in a quick glance at the data, it looks like
+there are some misspellings of the city names here and there. So what I'll do is
+create a subset of Atlanta contributions using the contributor zip
+code column, `contbr_zip`.
+
+I'll use the `dplyr` package to do some subsetting and reshaping of the data.
+I'll also filter the data to contributions to Trump and Clinton, convert the zip
+code column to numeric format, and truncate the entries in the zip code column to
+five digits.
+                  
+The [USPS website](https://tools.usps.com/go/ZipLookupResultsAction!input.action?items=30&page=1&companyName=&address1=&address2=&city=Atlanta&state=GA&zip=) has a complete list of zip codes for the city of Atlanta. I'll
+use this list to create a vector containing all of the Atlanta zip codes. I'll
+also add a column containing "TRUE" or "FALSE" depending on whether the zip code
+associated with the contribution was in the City of Atlanta or not, and filter
+the dataframe to create two subsetted data frames containing contributions from
+Atlanta and contributions from outside of Atlanta.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Zip_Code_Data}
+# Use dplyr to create data.frame containing contributions to Clinton & Trump
+ga_zips <- filter(ga, cand_nm == "Clinton, Hillary Rodham"
+                  | cand_nm == "Trump, Donald J.")
+# Truncate zip codes in dataset to first five digits
+ga_zips$contbr_zip <- as.numeric(substr(ga_zips$contbr_zip, 0, 5))
+# Reduce data.frame to transaction ID, candidate name, zip code, amount
+ga_zips <- select(ga_zips, tran_id, cand_nm, contbr_zip, contb_receipt_amt)
+
+# Character vector containing all of Atlanta's zip codes
+atlanta_zip_codes <- c(30301, 30302, 30303, 30304, 30305, 30306, 30307, 30308,
+                       30309, 30310, 30311, 30312, 30313, 30314, 30315, 30316,
+                       30317, 30318, 30319, 30320, 30321, 30322, 30324, 30325,
+                       30326, 30327, 30328, 30329, 30331, 30332, 30333, 30334,
+                       30336, 30337, 30338, 30339, 30340, 30341, 30342, 30343,
+                       30344, 30345, 30346, 30348, 30349, 30350, 30353, 30354,
+                       30355, 30356, 30357, 30358, 30359, 30360, 30361, 30362,
+                       30363, 30364, 30366, 30368, 30369, 30370, 30371, 30374,
+                       30375, 30377, 30378, 30380, 30384, 30385, 30388, 30392,
+                       30394, 30396, 30398, 31106, 31107, 31119, 31126, 31131,
+                       31136, 31139, 31141, 31145, 31146, 31150, 31156, 31192,
+                       31193, 31195, 31196, 39901)
+
+# Add new column with "TRUE" if zip code is in Atlanta, "FALSE" if not
+ga_zips <- mutate(ga_zips,
+                  atlanta_zip = contbr_zip %in% atlanta_zip_codes)
+
+# Create subsets of mutated data based on whether in Atlanta or not
+atl_major_contributions <- filter(ga_zips, atlanta_zip == TRUE)
+non_atl_major_contributions <- filter(ga_zips, atlanta_zip == FALSE)
+```
+
+Next I'll create a set of two dataframes for Atlanta contributions to Clinton
+and Atlanta contributions to Trump, and run some statistical summaries on them.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Subset_ATL_Contributions}
+# Create subsets of Atlanta contributions for each major-party candidate
+atl_major_contributions.clinton <- subset(atl_major_contributions,
+                                          cand_nm == "Clinton, Hillary Rodham")
+atl_major_contributions.trump <- subset(atl_major_contributions,
+                                        cand_nm == 'Trump, Donald J.')
+```
+
+Summary of contributions to Clinton from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Clinton_Summary}
+# Display summary of contributions to Clinton from Atlanta
+summary(atl_major_contributions.clinton$contb_receipt_amt)
+```
+
+Count of contributions to Clinton from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Clinton_Count}
+# Display count of contributions to Clinton from Atlanta
+dim(atl_major_contributions.clinton)
+```
+
+Sum of contributions to Clinton from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Clinton_Sum}
+# Display sum of contributions to Clinton from Atlanta
+sum(atl_major_contributions.clinton$contb_receipt_amt)
+```
+
+Summary of contributions to Trump from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Trump_Summary}
+# Display summary of contributions to Trump from Atlanta
+summary(atl_major_contributions.trump$contb_receipt_amt)
+```
+
+Count of contributions to Trump from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Trump_Count}
+# Display count of contributions to Trump from Atlanta
+dim(atl_major_contributions.trump)
+```
+
+Sum of contributions to Trump from Atlanta:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Trump_Sum}
+# Display sum of contributions to Trump from Atlanta
+sum(atl_major_contributions.trump$contb_receipt_amt)
+```
+
+Clinton received almost 24,000 contributions from Atlanta whereas Trump received
+only 2,913 contributions from Atlanta. However, the median and mean contribution
+amounts for Trump are considerably higher than those for Clinton:
+
+* Trump received a median contribution of 100 dollars from Atlanta while Clinton
+received a median contribution of 37 dollars.
+* Trump received a mean contribution of 336.3 dollars from Atlanta while Clinton
+receive a mean contribution of 158.6 dollars.
+* Trump received a total of 979,781.7 dollars from Atlanta while Clinton
+received a total of 3,802,396 dollars.
+
+I'd like to look at histograms of the number of contributions from Atlanta to
+the major-party candidates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Hist1}
+# Create histograms of contributions from Atlanta to major-party candidates
+qplot(x = contb_receipt_amt, 
+      data = atl_major_contributions) +
+  # Facet graph by candidate name and make it two columns
+  facet_wrap(~cand_nm, ncol=2) +
+  # Add title
+  ggtitle("Atlanta Contributions")
+```
+
+It's a bit hard to see what's going on in this distribution so I'm going to
+apply a log10 scale and see if that helps with understanding it.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Hist2}
+# Create histograms of contributions from Atlanta to major-party candidates and
+# plot them on a log10 x-scale.
+qplot(x = contb_receipt_amt, 
+      data = atl_major_contributions) +
+  scale_x_log10() +
+  # Facet graph by candidate name and make it two columns
+  facet_wrap(~cand_nm, ncol=2) +
+  # Add title
+  ggtitle("Atlanta Contributions")
+```
+
+Here we have two normal-ish distributions for Clinton and Trump. These
+distributions reflect the fact that Clinton received way more individual
+contributions than Trump did in Atlanta. It's a bit harder to tell that the mean
+and median contribution amounts were greater for Trump but we can see that his
+distribution is a bit further to the right on the x-axis than Clinton's is.
+
+Next let's look at a boxplot of contributions from Atlanta to both major-party
+candidates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contbs_Boxplots}
+# Create boxplots of contributions from Atlanta to both major-party candidates
+qplot(x = cand_nm, y = contb_receipt_amt,
+      data = atl_major_contributions) +
+    stat_summary(fun.y = mean, geom = 'point', colour = 'red', shape = 4) +
+  geom_boxplot() +
+  # Add title
+  ggtitle("Atlanta Contributions")
+```
+
+Without zooming in, we can see that there is more variance in receipt amounts
+for Trump than there is for Clinton, whose contributions remain in the -2,700-
+to 2,700-dollar range. Let's zoom in using `coord_cartesian` to get a closer
+look at the interquartile range without removing any values from the data. I'll
+also add a red "x" using `stat_summary` marking the mean contribution amount for
+each candidate.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contbs_Boxplots_Zoom}
+# Create boxplots of contributions from Atlanta to both major candidates
+qplot(x = cand_nm, y = contb_receipt_amt,
+      data = atl_major_contributions) +
+  geom_boxplot() +
+  # Add an 'X' marking the mean contribution amount for each candidate
+  stat_summary(fun.y = mean, geom = 'point', colour = 'red', shape = 4) +
+  # Zoom in to the area between 0 and 400 dollars without removing data
+  coord_cartesian(ylim = c(0, 400)) +
+  # Add title
+  ggtitle("Atlanta Contributions")
+```
+
+This zoomed-in version makes it clear that most of Clinton's contributions from
+Atlanta were between 25 dollars and 100 dollars each while most of the
+contributions to Trump were much higher, between 50 and 250 dollars each. The
+median and mean contribution amounts are visibly much higher for Trump than for
+Clinton, but the thickness of the Clinton boxplot's whiskers reflects the
+higher quantity of contributions she received.
+
+Now let's take a look at contributions from outside Atlanta.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contributions_Code}
+# Create subsets of non-Atlanta contributions for each major-party candidate
+non_atl_major_contributions.clinton <- subset(non_atl_major_contributions,
+                                          cand_nm == "Clinton, Hillary Rodham")
+non_atl_major_contributions.trump <- subset(non_atl_major_contributions,
+                                        cand_nm == 'Trump, Donald J.')
+```
+
+Summary of contributions to Clinton from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Clinton_Summary}
+# Display summary of contributions to Clinton from outside Atlanta
+summary(non_atl_major_contributions.clinton$contb_receipt_amt)
+```
+
+Count of contributions to Clinton from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Clinton_Count}
+# Display count of contributions to Clinton from outside Atlanta
+dim(non_atl_major_contributions.clinton)
+```
+
+Sum of contributions to Clinton from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Clinton_Sum}
+# Display sum of contributions to Clinton from outside Atlanta
+sum(non_atl_major_contributions.clinton$contb_receipt_amt)
+```
+
+Summary of contributions to Trump from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Trump_Summary}
+# Display summary of contributions to Trump from outside Atlanta
+summary(non_atl_major_contributions.trump$contb_receipt_amt)
+```
+
+Count of contributions to Trump from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Trump_Count}
+# Display count of contributions to Trump from outside Atlanta
+dim(non_atl_major_contributions.trump)
+```
+
+Sum of contributions to Trump from Georgia (outside Atlanta):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Trump_Sum}
+# Display sum of contributions to Trump from outside Atlanta
+sum(non_atl_major_contributions.trump$contb_receipt_amt)
+```
+
+The contrasts between contribution amounts received have stark contrasts outside
+of Atlanta. The mean and median contribution amounts for Trump are twice those
+of Clinton. While Clinton received 44,419 contributions outside Atlanta, Trump
+received 26,777 contributions and out-fundraised her by over 700,000 dollars.
+I'll look at some visual representations of this.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NonATL_Contbs_Initial_Hist}
+# Create histogram of contributions from outside Atlanta to major-party
+# candidates, faceted by candidate name.
+qplot(x = contb_receipt_amt, 
+      data = non_atl_major_contributions) +
+  facet_wrap(~cand_nm, ncol=2) +
+  # Add title
+  ggtitle("Non-Atlanta Contributions")
+```
+
+This first stab at a histogram of non-Atlanta contributions is a bit hard to
+read so I'll do a log10 transformation of the x-axis scale as I did with the
+distributions of the Atlanta contributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, NonATL_Contbs_Histograms}
+# Create histogram of contributions from outside Atlanta to major-party
+# candidates, faceted by candidate name, on log10 x-scale.
+qplot(x = contb_receipt_amt, 
+      data = non_atl_major_contributions) +
+  scale_x_log10() +
+  facet_wrap(~cand_nm, ncol=2) +
+  # Add title
+  ggtitle("Non-Atlanta Contributions")
+```
+
+Compared to the distribution of his Atlanta contributions, Trump has a more
+robust normal distribution of individual contributions received from outside of
+Atlanta. The y-scale of the count of contributions received is much higher as
+well for both distributions. It'd be helpful to look at these contributions all
+on the same scale, so I'll save the plots I previously made into variables and
+use the `grid.arrange` function from the `gridExtra` package to look at them all
+at once.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_v_NonATL_Contbs_Hist}
+# Save previous histogram of major-party contributions from Atlanta.
+# Put graph on y-scale of 0 to 10,000 for comparison with non-ATL contributions.
+# Add title to plots.
+atl_maj_con_compare <- qplot(x = contb_receipt_amt, 
+      data = atl_major_contributions) +
+  scale_x_log10() +
+  ylim(0, 10000) +
+  facet_wrap(~cand_nm, ncol=2) +
+  ggtitle('Atlanta Contributions')
+
+# Save previous histogram of major-party contributions from outside Atlanta.
+# Put graph on y-scale of 0 to 10,000 for comparison with ATL contributions.
+# Add title to plots.
+non_atl_maj_con_compare <- qplot(x = contb_receipt_amt, 
+      data = non_atl_major_contributions) +
+  scale_x_log10() +
+  ylim(0, 10000) +
+  facet_wrap(~cand_nm, ncol=2) +
+  ggtitle('Non-Atlanta Contributions')
+
+# Show all the histograms at once
+grid.arrange(atl_maj_con_compare, non_atl_maj_con_compare, ncol = 1)
+```
+
+Looking at everything at once, it's apparent that Trump did way better outside
+of Atlanta than he did inside Atlanta. This seems to fit with what I've heard
+about Atlanta skewing much more liberal than conservative compared to the rest
+of the state. 
+
+Let's also look at boxplots of the non-Atlanta contributions for comparison.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Boxplots}
+# Create boxplots of contributions to major-party candidates from
+# outside of Atlanta.
+qplot(x = cand_nm, y = contb_receipt_amt,
+      data = non_atl_major_contributions) +
+  geom_boxplot() +
+  # Add title
+  ggtitle("Non-Atlanta Contributions")
+```
+
+This initial boxplot reflects the high variance of contributions to Trump from
+outside of Atlanta, with amounts ranging from -5,900 to 12,500. Let's zoom in
+on the interquartile ranges and get a better look at where most of the
+distribution's values lie.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Non_ATL_Contbs_Boxplots_Zoom}
+# Create boxplots of contribution amounts to major-party candidates from
+# outside of Atlanta.
+qplot(x = cand_nm, y = contb_receipt_amt,
+      data = non_atl_major_contributions) +
+  geom_boxplot() +
+  # Add an 'X' marking the mean contribution amount for each candidate
+  stat_summary(fun.y = mean, geom = 'point', colour = 'red', shape = 4) +
+  # Zoom into the area between 0 and 400 without removing data
+  coord_cartesian(ylim = c(0, 400)) +
+  # Add title
+  ggtitle("Non-Atlanta Contributions")
+```
+
+As with contributions from Atlanta, the mean and median contribution amounts for
+Trump are much higher than those of Clinton when it comes to contributions in
+the rest of the state. There is also considerably more variance in contribution
+amounts for Trump than for Clinton.
+
+I'd like to look at all the boxplots at once and see if that provides any
+further insight.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ATL_Contribs_Compare}
+# Save boxplots of Atlanta major-party contributions to variable
+atl_maj_con_boxplot <- qplot(x = cand_nm, y = contb_receipt_amt,
+      data = atl_major_contributions) +
+  geom_boxplot() +
+  stat_summary(fun.y = mean, geom = 'point', colour = 'red', shape = 4) +
+  coord_cartesian(ylim = c(0, 400)) +
+  ggtitle("Atlanta Contributions")
+
+# Save boxplots of non-Atlanta major-party contributions to variable
+non_atl_maj_con_boxplot <- qplot(x = cand_nm, y = contb_receipt_amt,
+      data = non_atl_major_contributions) +
+  geom_boxplot() +
+  stat_summary(fun.y = mean, geom = 'point', colour = 'red', shape = 4) +
+  coord_cartesian(ylim = c(0, 400)) +
+  ggtitle("Non-Atlanta Contributions")
+
+# Display boxplots one above the other
+grid.arrange(atl_maj_con_boxplot, non_atl_maj_con_boxplot, ncol = 1)
+```
+
+It's notable that the shapes of the boxplots have similar size ratios for both
+Atlanta and non-Atlanta contributions. The mean and median contributions to
+both candidates are higher in Atlanta than they are statewide. I'm not sure if
+this means that Atlanta residents are more affluent on average than people
+outside the city, or if it's the larger number of contributions from outside
+Atlanta (approximately 70,000 versus the approximately 26,000 from Atlanta) that
+brings down the mean and median.
+
+### Atlanta/Non-Atlanta Form Types
+I'm curious whether there are any associations between the form type and
+location in terms of Atlanta vs. non-Atlanta contributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Form_Type_vs_Location}
+# Create smaller data.frame from overall data containing zip code, transaction
+# ID, form type, and party. Truncate zip code to five digits.
+ga_form_data <- select(ga, contbr_zip, tran_id, form_tp, cand_party)
+ga_form_data$contbr_zip <- substr(ga_form_data$contbr_zip, 0, 5)
+# Add a column to this data.frame which says "TRUE" if contribution is in
+# Atlanta and false if contribution is from outside Atlanta.
+ga_form_data <- mutate(ga_form_data,
+                       atl = contbr_zip %in% atlanta_zip_codes)
+
+# Look at summary of form types by whether address is in Atlanta or not
+by(ga_form_data$form_tp, ga_form_data$atl, summary)
+```
+
+There were almost three times the number of campaign contributors from
+outside Atlanta than from inside Atlanta. Additionally there were more
+than four times as many "authorized committee" contributions from outside of
+Atlanta (29,776) than there were from Atlanta (6,878). 
+
+## Form Type vs. Contribution Amount Over Time
+I'm wondering if there is any connection between form type and contribution
+amount.
+
+As I saw in the univariate analysis, most of the contributions (116,284 out of
+153,985) are classed as "Form 3P Line 17A", meaning they are contributions from
+individuals, not committees. There are, however, 36,654 contributions designated
+as "Form 3P Line 17A" (transfers from authorized committees) and 1,047
+transactions categorized as "Form 3P Line 28A (refunds to individuals).
+
+I'll look at some quick summaries and scatterplots to see if that tells me
+anything about a possible relationship between form type and contribution
+amount.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Form_Tp_vs_Contb_Amt}
+# Summarize contribution amounts by form type
+by(ga$contb_receipt_amt, ga$form_tp, summary)
+```
+
+Contributions categorized as being from authorized committees have higher mean
+and median contribution amounts - a mean of 152.5 dollars and a median of 50
+dollars - than contributions categorized as being from individuals, which have
+a mean of 106 dollars and a median of 27 dollars.
+
+I'll look at contributions over time colored by form type. I'll initially focus
+in on the area between 0 and 2700 dollars for the year 2016, and set the
+transparency low so I can get a better sense of what's going on here.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_Time_Form_Type_SPlot_Zoom}
+# Create scatterplot of contributions over time by contribution amount
+# Color points by form type
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, colour = form_tp),
+       data = ga) +
+  # Set transparency to 1/100
+  geom_point(alpha = 0.01) +
+  # Limit x-axis to year 2016 and y-axis to contributions under 2700 dollars
+  coord_cartesian(xlim = c(as.Date('2016-01-31'), as.Date('2016-12-31')),
+                  ylim = c(0, 2700)) +
+  # Keep the colors fully visible in the legend
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+It looks like the variance is mostly comparable for form types 17A and 18, and
+it's no surprise that all the form 28A transactions are negative values as they
+are refunds.
+
+Committee contributions are visibly a bit higher on average than individual
+"SA17A" contributions. Interestingly the committee contributions don't really
+gear up in earnest until July 2016 when the party conventions are going on.
+
+The overall variance in contribution amounts for committee contributions is not
+that much greater than that for regular individual contributions. Additionally
+the vast majority of the contributions appear to be less than 100 dollars.
+
+I'll zoom in just a bit closer to the area between 0 and 250 dollars and see if
+that adds anything to my understanding.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_Time_Form_Type_SPlot_Zoom_100}
+# Create scatterplot of contributions over time by contribution amount
+# Color points by form type
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, colour = form_tp),
+       data = ga) +
+  # Set transparency to 1/100
+  geom_point(alpha = 0.01) +
+  # Limit x-axis to year 2016 and y-axis to contributions under 250 dollars
+  coord_cartesian(xlim = c(as.Date('2016-01-31'), as.Date('2016-12-31')),
+                  ylim = c(0, 250)) +
+  # Keep the colors fully visible in the legend
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+I can see here that most committee contributions tend to be at least 25 dollars
+and that most of the green points representing these contributions have, as I
+saw before, a higher average contribution amount.
+
+Are there any details about the committees themselves to be found in the data?
+I'll take a quick look at the first rows of filtered data.frame showing
+only committee contributions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Committee_Contributions}
+# Filter the ga data.frame to show only rows with form type 18A
+sa18 <- filter(ga, form_tp == 'SA18')
+# Look at the first ten rows of this new data.frame
+head(sa18, 10)
+```
+
+Other than the form type these contributions don't look terribly different from
+individual contributions - there's an individual name, city, state, zip code,
+occupation, and employer associated with each of these contributions.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+I observed once again that mean and median contributions to Trump and other
+Republican candidates were much higher than mean and median contributions
+to Democratic candidates. It's also clear that, while Clinton had lower
+contribution amounts on average, she received way more individual
+contributions throughout the state than Trump did.
+
+There also seemed to be relationships between location and both contribution
+amounts and candidate contributed to. Atlanta contributions are higher on 
+average than contributions from outside of Atlanta. Additionally contributions
+from Atlanta appear much more likely to contribute to Clinton instead of Trump.
+While Clinton enjoyed a considerable amount of contributions from the rest of 
+the state, it's the rest of the state where Trump did most of his fundraising.
+Additionally, it appears that there is a relationship between form type and
+party as well as form type and location (i.e. in or outside of Atlanta).
+
+Looking at daily contribution dollar amount totals turned out to be very useful.
+I created line graphs of daily contribution totals broken down by candidate
+party and candidate gender. These graphs, when overlaid with vertical lines
+reflecting dates of debates and of a few significant campaign events, provided
+different insights than when I looked at these events in relation to a
+scatterplot of contributions over time.
+
+Contributions from authorized committees tended to have higher dollar amounts
+than contributions from individuals. Additionally, it looked like contributions
+from committees appeared to start coming in more rapidly once the general
+election was underway.
+
+It did not appear that contribution amounts varied a great deal with election
+type. Some of the earliest contributions were very high but for the most part
+individual contributions were less than 100 dollars apiece.
+
+### Were there any interesting or surprising interactions between features?
+When I looked at daily contribution totals by party and added vertical lines
+representing debates and turning points in the election, all of a sudden
+I was able to get a better sense of what the effects of those events may
+have been. This was not immediately apparent in the earlier parts of my
+explorations. Additionally, what these graphs with the events overlaid on them
+suggested is that the events had a different effect than I would have expected.
+
+The difference between mean and median contribution amounts to primary and
+general elections was not immediately visible on a scatterplot or in summaries
+of the overall data. However, it turned out that Trump received much higher
+contribution amounts on average during the general election than he did during
+the primary election. Clinton's average contribution amount went
+down once the general election began. The earlier the date of an election
+contribution the more variance there was observable in median contribution
+amount.
+
+Contributions to male candidates were significantly higher in mean and median
+contribution amounts than were contributions to female candidates. However there
+were points during the primary election where female candidates had higher daily
+totals than did the male candidates, which is interesting in light of how many
+male candidates were still in the running at that point.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
+# Create line graphs of contribution counts by day to Clinton & Trump
+# Save plot to a variable
+contb_counts_final <- qplot(x = contb_receipt_dt, 
+      data = subset(ga, cand_nm == 'Clinton, Hillary Rodham' | 
+                      cand_nm == 'Trump, Donald J.'),
+      binwidth = 1, geom = 'freqpoly', colour = cand_nm) +
+  # Restrict x-axis to June-December 2016, minor breaks by month
+  scale_x_date(limits = c(as.Date('2016-06-01'), as.Date('2016-12-31')),
+               date_minor_breaks = "1 month") +
+  # Set x-axis title
+  xlab("Contribution Receipt Date") +
+  # Set y-axis title
+  ylab("Number of Contributions") +
+  # Set title for plot
+  ggtitle(paste("Contributions from Georgia to Major-Party Nominees",
+          "U.S. Presidential Election, 2016", sep = "\n"))
+
+# Display the graph
+contb_counts_final +
+  # Use Paul Tol color scheme from ggthemes package
+  scale_color_ptol("cyl") +
+  # Add minimal theme
+  theme_minimal() +
+  # Remove the legend title
+  theme(legend.title = element_blank())
+```
+
+### Description One
+This plot shows how the number of individual contributions from Georgia to the
+two major-party candidates changed over the course of the election, after the
+primaries. During June, July, and August, there are several spikes in
+contributions to Trump. This is the time period in which the pool of Republican
+nominees shook down and the Republican National Convention took place. However,
+Clinton received a higher number of contributions day-to-day from August through
+Election Day. Once Election Day arrives, contributions to Clinton end but Trump
+receives a trickle of contributions through early December.
+
+The reason I chose this plot is because it surprised me that Clinton received
+more individual contributions day-to-day for much of general election season. It
+also gives an idea of how volatile the day-to-day numbers of contributions are.
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE, Contbs_Scatter_Jun_Dec_Final}
+# Create plot showing all contributions to Trump during general election
+# Save to variable
+trump_contbs_time_general_final <- ggplot(aes(x = contb_receipt_dt,
+                                        y = contb_receipt_amt),
+                                    data = trump) +
+  # Jitter scatterplot points and color them red
+  geom_jitter(alpha = 0.01, colour = "red") +
+  # Set x-axis limits to 6/15/16-12/15/16 with breaks at start of each month
+  scale_x_date(limits = c(as.Date('2016-06-15'), as.Date('2016-12-15')),
+               breaks = seq(as.Date('2016-06-01'), as.Date('2016-12-31'),
+                            'month')) +
+  # Set limit on y-axis of 0 to 500 dollars
+  ylim(0, 500) +
+  # Label the y-axis
+  ylab("Amount ($)") +
+  # Title the plot
+  ggtitle("Donald Trump") +
+  # Make title text size 12
+  theme(plot.title = element_text(size = 12),
+        # Make axis title text size 10
+        axis.title = element_text(size = 10),
+        # Remove the x-axis title
+        axis.title.x = element_blank())
+
+# Create plot showing all contributions to Clinton during general election
+# Save to variable
+clinton_contbs_time_general_final <- ggplot(aes(x = contb_receipt_dt,
+                                          y = contb_receipt_amt),
+                                  data = clinton) +
+  # Jitter the scatterplot points and color them blue
+  geom_jitter(alpha = 0.01, colour = "blue") +
+  # Set x-axis limits to 6/15/16-12/15/16 with breaks at start of each month
+  scale_x_date(limits = c(as.Date('2016-06-15'), as.Date('2016-12-15')),
+               breaks = seq(as.Date('2016-06-01'), as.Date('2016-12-31'),
+                            'month')) +
+  # Set limit on y-axis of 0 to 500 dollars
+  ylim(0, 500) +
+  # Label the y-axis
+  ylab("Amount ($)") +
+  # Title the plot
+  ggtitle("Hillary Clinton") +
+  # Make title text size 12
+  theme(plot.title = element_text(size = 12),
+        # Make axis title text size 10
+        axis.title = element_text(size = 10),
+        # Remove the x-axis title
+        axis.title.x = element_blank())
+
+# Create scatterplot showing all contributions during general election period
+# Save to variable
+all_contbs_time_general_final <- ggplot(aes(x = contb_receipt_dt,
+                                      y = contb_receipt_amt), data = ga) +
+  # Jitter scatterplot points and color them purple
+  geom_jitter(alpha = 0.01, colour = "purple") +
+  # Set x-axis limits to 6/15/16-12/15/16 with breaks at start of each month
+  scale_x_date(limits = c(as.Date('2016-06-15'), as.Date('2016-12-15')),
+               breaks = seq(as.Date('2016-06-01'), as.Date('2016-12-31'),
+                            'month')) +
+  # Set limit on y-axis of 0 to 500 dollars
+  ylim(0, 500) +
+  # Label the y-axis
+  ylab("Amount ($)") +
+  # Title the plot
+  ggtitle("All Candidates") +
+  # Make title text size 12
+  theme(plot.title = element_text(size = 12),
+        # Make axis title text size 10
+        axis.title = element_text(size = 10),
+        # Remove the x-axis title
+        axis.title.x = element_blank())
+
+# Plot all three scatterplots together in one column
+grid.arrange(trump_contbs_time_general_final,
+  clinton_contbs_time_general_final,
+  all_contbs_time_general_final, ncol = 1,
+  # Set title for all three plots
+  top = paste("Individual Contributions Under $500 from Georgia",
+              "to U.S. Presidential Election, 2016 (General)", sep = "\n"))
+```
+
+### Description Two
+Most contributions from Georgia to the various presidential candidates in the
+2016 election were under 500 dollars. Looking at a scatterplot of these
+contributions over time, with a transparency of 1/100, gives a sense of the ebb
+and flow of contributions from Georgia residents during the general election
+period.
+
+Clinton visibly has a more sustained number of contributions coming in,
+particularly at 100 dollars or less per contribution. Trump, on the other hand,
+has hot and cold periods, with a less sustained intake but a visibly higher
+average contribution amount, as well as more contributions at the 250- and
+400-dollar levels.
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Daily_Totals_by_Cand_Nm}
+# Select columns from dataset: candidate name, date, amount, transaction ID
+daily_nominee_totals_cols <- select(ga, cand_nm, contb_receipt_dt, 
+                                  contb_receipt_amt, tran_id)
+
+# Filter data.frame to Democratic, Republican, Green, and Libertarian nominees
+daily_nominee_totals_cols <- filter(daily_nominee_totals_cols,
+                                    cand_nm == "Trump, Donald J."
+                                    | cand_nm == "Clinton, Hillary Rodham"
+                                    | cand_nm == "Stein, Jill"
+                                    | cand_nm == "Johnson, Gary")
+
+# Group columns in new data.frame by name and receipt date
+# Add new column for sum daily total contributions received by candidate
+daily_nominee_totals <- daily_nominee_totals_cols %>% 
+  group_by(cand_nm, contb_receipt_dt) %>% 
+  summarise(daily_nominee_total = sum(contb_receipt_amt))
+
+# Plot line graphs representing daily contribution totals to candidates by name
+# Save this figure to a variable
+daily_nominee_totals <- ggplot(aes(x = contb_receipt_dt,
+                                   y = daily_nominee_total, colour = cand_nm),
+                                   data = daily_nominee_totals) +
+  geom_line() +
+  # Add blue dashed line representing September 26 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-09-26'))),
+             colour = 'blue', linetype = 4) +
+  # Add purple dashed line representing October 9 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-09'))), 
+             colour = 'purple', linetype = 4) +
+  # Add red dashed line representing October 19 presidential debate
+  geom_vline(aes(xintercept = as.numeric(as.Date('2016-10-19'))), 
+             colour = 'red', linetype = 4) +
+  # Restrict x-axis to September 1 through November 15
+  scale_x_date(lim = c(as.Date('2016-09-01'), as.Date('2016-11-15')),
+               date_minor_breaks = "1 month") +
+  # Restrict y-axis to contributions between 0 to 90000
+  scale_y_continuous(lim = c(0, 90000)) +
+  # Specify title for graph
+  ggtitle(paste("Total Daily Campaign Contributions from Georgia vis-à-vis",
+                "U.S. Presidential Debates (9/26, 10/9, 10/19), 2016",
+                sep = "\n")) +
+  # Leave x-axis label blank
+  xlab("") +
+  # Specify y-axis label
+  ylab("Daily Contribution Total ($)")
+
+# Display the graph
+daily_nominee_totals +
+  # Use Paul Tol color scheme from ggthemes package
+  scale_color_ptol("cyl") +
+  # Add minimal theme
+  theme_minimal() +
+  # Set plot title text to size 11 and center it
+  theme(plot.title = element_text(hjust = 0.5, size = 11),
+        # Remove legend title
+        legend.title = element_blank(),
+        # Set axis title text to size 10
+        axis.title = element_text(size = 10))
+```
+
+### Description Three
+This plot, which happens to look at potential election turning points, was
+itself a turning point in my analysis process. I had been looking at individual
+contribution amounts in relation to time, and struggled to find any kind of
+connection between certain election events and the contribution amounts that
+were coming in. Calculating the daily contribution totals and plotting them as
+line graphs broken up by party gave a better sense of 
+
+After each presidential debate there is all sorts of dialogue in the media
+about who "won" each time. This is a difficult thing to quantify or assess with
+any kind of objectivity, but looking at short-term impacts on daily campaign
+fundraising at the state level might help give a regional picture of who "won."
+
+In this case, we can observe a couple of things. There's a drop in contributions
+from Georgia to Clinton right after the first debate while the fundraising
+momentum that Trump had in Georgia prior to that debate continues to climb for
+at least a few days afterward. A similar pattern emerges with the second debate:
+Clinton's daily contribution totals drop while Trump's climb at that time
+continues for a few days afterward. The third debate marks the beginning of yet
+another drop in contributions from Georgia to Clinton, and while Trump's
+contributions have a positive slope approaching that day, they decline sharply
+afterward, hitting nearly the same low that Clinton hits.
+
+It's also interesting to observe the small spikes in contributions to Gary
+Johnson, the Libertarian nominee, and Jill Stein, the Green nominee. These
+spikes don't appear to have too much of a connection to the debates, but there
+is a small spike in Johnson's contributions after the first debate. Perhaps some
+right-leaning viewers of the first debate didn't connect with Trump and decided
+to contribute to the Libertarian candidate.
+
+------
+
+# Reflection
+It turned out there were far more ways to break down state-level election
+contributions than I thought. Even after looking at this data from all the
+angles that I have, I feel like I've only really scratched the surface of what
+took place over the course of the election from a campaign finance perspective.
+
+The data posed some difficulties that I wasn't sure how to get around. One I'd
+be particularly keen to resolve is consolidating contributions to the individual
+level with the use of `dplyr` or another reshaping package. This seems almost
+impossible to do given that contributor names and city names can be misspelled.
+Additionally it's entirely possible to give multiple contributions and provide
+correct demographic information as of a particular date that differs from
+demographic information provided on another date - a contributor may have moved
+cities or zip codes, started a new job or changed their last name after a
+marriage, or started a new job.
+
+It's also difficult to address the outliers in the contribution amounts column.
+What makes this difficult are the reassignments that take place for compliance
+with campaign finance regulations. There are also a wide variety of memos
+associated with these contributions, the significance of which I did not have
+the bandwidth to fully delve into.
+
+As far as what went well, I found that I was able to create an interesting and
+aesthetically appealing (to me, anyway) range of visuals that showed many
+different ways of considering this data. Histograms, boxplots, frequency
+polygons, line graphs, and scatterplots all offered windows to this data that
+opened my eyes to what took place in this election.
+
+I was surprised by a few things. Firstly I got the sense that both Clinton and
+Sanders did far better from a fundraising standpoint than I thought they would
+in light of the state's recent voting history. Secondly the effects of the
+turning points I looked at - the presidential debates, the Billy Bush tape,
+and Comey's letter to Congress - on daily contribution totals were not what I
+would have expected.
+
+There are future analyses I'd like to do with this dataset down the road. I'd
+like to analyze contributors from Atlanta suburbs versus the city itself, and
+also look at these two areas compared to the rest of the state. It'd also be
+interesting to look at a wider range of turning points and attempt to quantify
+the effect that these turning points did or did not have on the contribution
+amounts and totals.
